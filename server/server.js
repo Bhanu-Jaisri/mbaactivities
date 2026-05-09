@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
 
@@ -55,7 +54,8 @@ app.post('/api/auth/login', async (req, res) => {
     const user = result.rows[0];
     console.log(`User found: ${user.username}, Role: ${user.role}`);
     
-    const validPassword = await bcrypt.compare(password, user.password_hash);
+    // Direct plain-text password comparison
+    const validPassword = password === user.password_hash;
     if (!validPassword) {
       console.log('Invalid password provided');
       return res.status(400).json({ error: 'Invalid password' });
@@ -102,11 +102,10 @@ app.post('/api/users', authenticateToken, async (req, res) => {
   }
 
   try {
-    const salt = await bcrypt.genSalt(10);
-    const hash = await bcrypt.hash(password, salt);
+    // Saving password directly in plain text
     const result = await db.query(
       'INSERT INTO users (username, password_hash, role, sub_role, roll_number) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, role, sub_role, roll_number',
-      [username, hash, role, sub_role || null, roll_number || null]
+      [username, password, role, sub_role || null, roll_number || null]
     );
     res.json(result.rows[0]);
   } catch (err) {

@@ -1,5 +1,4 @@
 const { Client } = require('pg');
-const bcrypt = require('bcrypt');
 
 const DB_CONFIG = process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } } : {
   user: 'postgres',
@@ -115,15 +114,17 @@ async function initDb() {
     const adminCheck = await amirthaClient.query("SELECT * FROM users WHERE username = 'admin'");
     if (adminCheck.rowCount === 0) {
       console.log('Admin user not found. Seeding admin user...');
-      const salt = await bcrypt.genSalt(10);
-      const hash = await bcrypt.hash('admin', salt);
       await amirthaClient.query(
         "INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'Admin')",
-        ['admin', hash]
+        ['admin', 'admin']
       );
       console.log('Admin user created (username: admin, password: admin)');
     } else {
-      console.log('Admin user already exists.');
+      console.log('Admin user already exists. Updating password to plain text...');
+      await amirthaClient.query(
+        "UPDATE users SET password_hash = 'admin' WHERE username = 'admin'"
+      );
+      console.log('Admin user password updated to plain text.');
     }
 
   } catch (err) {
