@@ -118,6 +118,10 @@ const FormDetails = () => {
     return form.participants.some(p => p.id === user.id);
   };
 
+  const isOrganizer = (form) => {
+    return [form.organizer_1, form.organizer_2, form.organizer_3].includes(user.id);
+  };
+
   const toggleExpand = (formId) => {
     setExpandedForms(prev => prev.includes(formId) ? prev.filter(id => id !== formId) : [...prev, formId]);
   };
@@ -300,7 +304,7 @@ const FormDetails = () => {
           <div style={{ marginBottom: '1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4 style={{ margin: 0, fontSize: '1rem' }}>Rounds</h4>
-              {isParticipant(form) && editingRounds !== form.id && form.status !== 'Approved' && (
+              {isOrganizer(form) && editingRounds !== form.id && form.status !== 'Approved' && (
                 <button className="btn" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingRounds(form)}>
                   <Edit3 size={14} /> Edit
                 </button>
