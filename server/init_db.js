@@ -1,7 +1,7 @@
 const { Client } = require('pg');
 const bcrypt = require('bcrypt');
 
-const DB_CONFIG = {
+const DB_CONFIG = process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } } : {
   user: 'postgres',
   host: 'localhost',
   password: '1234',
@@ -9,28 +9,30 @@ const DB_CONFIG = {
 };
 
 async function initDb() {
-  // 1. Connect to default postgres DB to create our target DB if not exists
-  const client = new Client({ ...DB_CONFIG, database: 'postgres' });
-  try {
-    await client.connect();
-    console.log('Connected to default postgres database.');
-    const res = await client.query("SELECT datname FROM pg_database WHERE datname = 'amirtha'");
-    if (res.rowCount === 0) {
-      console.log('Database "amirtha" not found. Creating...');
-      await client.query('CREATE DATABASE amirtha');
-      console.log('Database "amirtha" created.');
-    } else {
-      console.log('Database "amirtha" already exists.');
+  // 1. Connect to check database existence (only if not using connection string)
+  if (!process.env.DATABASE_URL) {
+    const client = new Client({ ...DB_CONFIG, database: 'postgres' });
+    try {
+      await client.connect();
+      console.log('Connected to default postgres database.');
+      const res = await client.query("SELECT datname FROM pg_database WHERE datname = 'amirtha'");
+      if (res.rowCount === 0) {
+        console.log('Database "amirtha" not found. Creating...');
+        await client.query('CREATE DATABASE amirtha');
+        console.log('Database "amirtha" created.');
+      } else {
+        console.log('Database "amirtha" already exists.');
+      }
+    } catch (err) {
+      console.error('Error checking/creating database:', err);
+      process.exit(1);
+    } finally {
+      await client.end();
     }
-  } catch (err) {
-    console.error('Error checking/creating database:', err);
-    process.exit(1);
-  } finally {
-    await client.end();
   }
 
-  // 2. Connect to the new amirtha database to create tables
-  const amirthaClient = new Client({ ...DB_CONFIG, database: 'amirtha' });
+  // 2. Connect to the target database to create tables
+  const amirthaClient = new Client(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } } : { ...DB_CONFIG, database: 'amirtha' });
   try {
     await amirthaClient.connect();
     console.log('Connected to amirtha database.');

@@ -44,13 +44,24 @@ const authorizeSubRole = (...allowedSubRoles) => {
 // --- AUTH ROUTES ---
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
+  console.log(`Login attempt for username: ${username}`);
   try {
     const result = await db.query('SELECT * FROM users WHERE username = $1', [username]);
-    if (result.rows.length === 0) return res.status(400).json({ error: 'User not found' });
+    if (result.rows.length === 0) {
+      console.log('User not found in database');
+      return res.status(400).json({ error: 'User not found' });
+    }
 
     const user = result.rows[0];
+    console.log(`User found: ${user.username}, Role: ${user.role}`);
+    
     const validPassword = await bcrypt.compare(password, user.password_hash);
-    if (!validPassword) return res.status(400).json({ error: 'Invalid password' });
+    if (!validPassword) {
+      console.log('Invalid password provided');
+      return res.status(400).json({ error: 'Invalid password' });
+    }
+
+    console.log('Login successful, generating token...');
 
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role, sub_role: user.sub_role },
