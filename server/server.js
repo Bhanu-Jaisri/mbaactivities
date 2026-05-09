@@ -220,21 +220,23 @@ app.put('/api/forms/:id/participants', authenticateToken, authorizeSubRole('Exec
   }
 });
 
-// Edit Rounds (Students in Participants only)
+// Edit Rounds (Organizers only)
 app.put('/api/forms/:id/rounds', authenticateToken, authorizeRole('Student'), async (req, res) => {
   const { id } = req.params;
   const { round_1_details, round_2_details, round_3_details } = req.body;
   try {
-    const formCheck = await db.query('SELECT status FROM event_forms WHERE id = $1', [id]);
+    const formCheck = await db.query('SELECT status, organizer_1, organizer_2, organizer_3 FROM event_forms WHERE id = $1', [id]);
     if (formCheck.rows.length === 0) return res.status(404).json({ error: 'Form not found' });
-    if (formCheck.rows[0].status === 'Approved') {
+    
+    const form = formCheck.rows[0];
+    if (form.status === 'Approved') {
       return res.status(403).json({ error: 'Cannot edit rounds on an approved form' });
     }
 
-    // Check if the current user is a participant
-    const partCheck = await db.query('SELECT * FROM form_participants WHERE form_id = $1 AND student_id = $2', [id, req.user.id]);
-    if (partCheck.rows.length === 0) {
-      return res.status(403).json({ error: 'Only participants can edit rounds' });
+    // Check if the current user is one of the organizers
+    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
+    if (!isOrganizer) {
+      return res.status(403).json({ error: 'Only organizers can edit rounds' });
     }
 
     const result = await db.query(
