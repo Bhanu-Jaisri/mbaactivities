@@ -1,10 +1,11 @@
+require('dotenv').config();
 const { Client } = require('pg');
 
 const DB_CONFIG = process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } } : {
-  user: 'postgres',
-  host: 'localhost',
-  password: '1234',
-  port: 5432,
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  password: process.env.DB_PASSWORD || '1234',
+  port: process.env.DB_PORT || 5432,
 };
 
 async function initDb() {
