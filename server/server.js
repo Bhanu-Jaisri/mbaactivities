@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('./init_db');
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
