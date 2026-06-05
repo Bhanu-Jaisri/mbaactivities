@@ -216,7 +216,7 @@ const FormDetails = () => {
 
           {/* Web Layout */}
           <div className="hide-on-print">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+            <div className="card-header-flex" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
             <h3 style={{ margin: 0 }}>{form.event_name}</h3>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               {form.status === 'Approved' && (

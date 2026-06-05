@@ -31,11 +31,11 @@ const Dashboard = () => {
   return (
     <div>
       <nav className="nav-bar glass-panel" style={{ borderRadius: '0', borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+        <div className="nav-container">
           <h2 style={{ margin: 0, background: 'linear-gradient(to right, #9EEBE8, #6FE1DC)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             Amirtha
           </h2>
-          <div style={{ display: 'flex', gap: '1rem' }}>
+          <div className="nav-links">
             <Link to="/" className={`btn ${location.pathname === '/' ? 'btn-secondary' : ''}`} style={{ border: 'none' }}>
               <FileText size={18} /> Forms
             </Link>
@@ -65,7 +65,7 @@ const Dashboard = () => {
       </nav>
 
       {canManageUsers && (
-        <div style={{ background: 'var(--surface)', padding: '0.75rem 2rem', borderBottom: '1px solid var(--surface-border)', display: 'flex', gap: '2rem', fontSize: '0.9rem' }}>
+        <div className="stats-bar">
           <span style={{ color: 'var(--text-muted)' }}><strong style={{ color: 'var(--text)' }}>Students:</strong> {stats.student}</span>
           <span style={{ color: 'var(--text-muted)' }}><strong style={{ color: 'var(--text)' }}>Secretaries:</strong> {stats.secretary}</span>
           <span style={{ color: 'var(--text-muted)' }}><strong style={{ color: 'var(--text)' }}>Executives:</strong> {stats.executive}</span>

@@ -62,7 +62,7 @@ const UserManagement = () => {
   };
 
   return (
-    <div className="grid" style={{ gridTemplateColumns: '1fr 2fr' }}>
+    <div className="grid-split">
       <div className="glass-panel">
         <h3><UserPlus size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} /> Create User</h3>
         {error && <div style={{ color: '#FCA5A5', marginBottom: '1rem', fontSize: '0.875rem' }}>{error}</div>}
