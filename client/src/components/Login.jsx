@@ -36,7 +36,7 @@ const Login = () => {
 
         <form onSubmit={handleSubmit}>
           <div className="input-group">
-            <label>Username</label>
+            <label>Username / Roll Number</label>
             <div style={{ position: 'relative' }}>
               <User style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', width: '18px' }} />
               <input
@@ -46,7 +46,7 @@ const Login = () => {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                placeholder="Enter username"
+                placeholder="Enter username or roll number"
               />
             </div>
           </div>

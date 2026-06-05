@@ -44,9 +44,10 @@ const authorizeSubRole = (...allowedSubRoles) => {
 // --- AUTH ROUTES ---
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
-  console.log(`Login attempt for username: ${username}`);
+  console.log(`Login attempt for identifier: ${username}`);
   try {
-    const result = await db.query('SELECT * FROM users WHERE username = $1', [username]);
+    // Query by username OR roll_number
+    const result = await db.query('SELECT * FROM users WHERE username = $1 OR roll_number = $1', [username]);
     if (result.rows.length === 0) {
       console.log('User not found in database');
       return res.status(400).json({ error: 'User not found' });
@@ -54,6 +55,12 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = result.rows[0];
     console.log(`User found: ${user.username}, Role: ${user.role}`);
+
+    // If user is a student, they must login with their roll number, not username
+    if (user.role === 'Student' && user.roll_number !== username) {
+      console.log('Student tried to log in using username instead of roll number');
+      return res.status(400).json({ error: 'Students must log in using their Roll Number' });
+    }
     
     // Direct plain-text password comparison
     const validPassword = password === user.password_hash;
@@ -100,6 +107,9 @@ app.post('/api/users', authenticateToken, async (req, res) => {
   }
   if (role === 'Admin') {
     return res.status(403).json({ error: 'Cannot create Admin accounts' });
+  }
+  if (role === 'Student' && (!roll_number || roll_number.trim() === '')) {
+    return res.status(400).json({ error: 'Roll number is required for students' });
   }
 
   try {
