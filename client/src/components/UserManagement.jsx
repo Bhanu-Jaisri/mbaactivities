@@ -7,6 +7,7 @@ const UserManagement = () => {
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
   
   // Form State
   const [username, setUsername] = useState('');
@@ -20,10 +21,19 @@ const UserManagement = () => {
     fetchUsers();
   }, []);
 
+  const isDeletable = (u) => {
+    if (u.id === user.id) return false;
+    if (u.role === 'Admin') return false;
+    if (user.role === 'Admin' && u.role === 'Staff') return true;
+    if (user.role === 'Staff' && u.role === 'Student') return true;
+    return false;
+  };
+
   const fetchUsers = async () => {
     try {
       const res = await api.get('/users');
       setUsers(res.data);
+      setSelectedUserIds([]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -58,6 +68,36 @@ const UserManagement = () => {
       fetchUsers();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to delete user');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedUserIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete the ${selectedUserIds.length} selected user(s)?`)) return;
+    try {
+      await api.post('/users/bulk-delete', { ids: selectedUserIds });
+      fetchUsers();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to delete selected users');
+    }
+  };
+
+  const handleCheckboxChange = (userId) => {
+    setSelectedUserIds(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const deletableUsers = users.filter(isDeletable);
+  const allSelected = deletableUsers.length > 0 && deletableUsers.every(u => selectedUserIds.includes(u.id));
+
+  const handleSelectAllToggle = () => {
+    if (allSelected) {
+      setSelectedUserIds([]);
+    } else {
+      setSelectedUserIds(deletableUsers.map(u => u.id));
     }
   };
 
@@ -103,11 +143,27 @@ const UserManagement = () => {
       </div>
 
       <div className="glass-panel">
-        <h3>User List</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <h3 style={{ margin: 0 }}>User List</h3>
+          {selectedUserIds.length > 0 && (
+            <button onClick={handleBulkDelete} className="btn btn-danger" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem' }}>
+              <Trash2 size={16} /> Delete Selected ({selectedUserIds.length})
+            </button>
+          )}
+        </div>
         <div className="table-container">
           <table>
             <thead>
               <tr>
+                <th style={{ width: '40px', textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={handleSelectAllToggle}
+                    disabled={deletableUsers.length === 0}
+                    style={{ cursor: 'pointer' }}
+                  />
+                </th>
                 <th>ID</th>
                 <th>Username</th>
                 <th>Roll Number</th>
@@ -118,6 +174,16 @@ const UserManagement = () => {
             <tbody>
               {users.map(u => (
                 <tr key={u.id}>
+                  <td style={{ textAlign: 'center' }}>
+                    {isDeletable(u) ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIds.includes(u.id)}
+                        onChange={() => handleCheckboxChange(u.id)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    ) : null}
+                  </td>
                   <td>{u.id}</td>
                   <td style={{ fontWeight: 500 }}>{u.username}</td>
                   <td>{u.roll_number || '-'}</td>
@@ -126,7 +192,7 @@ const UserManagement = () => {
                     {u.sub_role && <span className="badge" style={{ marginLeft: '8px', background: 'rgba(255,255,255,0.1)' }}>{u.sub_role}</span>}
                   </td>
                   <td>
-                    {u.id !== user.id && u.role !== 'Admin' && (
+                    {isDeletable(u) && (
                       <button onClick={() => handleDelete(u.id)} className="btn btn-danger" style={{ padding: '0.4rem 0.8rem' }}>
                         <Trash2 size={16} />
                       </button>
@@ -135,7 +201,7 @@ const UserManagement = () => {
                 </tr>
               ))}
               {users.length === 0 && !loading && (
-                <tr><td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No users found</td></tr>
+                <tr><td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No users found</td></tr>
               )}
             </tbody>
           </table>

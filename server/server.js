@@ -5,9 +5,13 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
 
+const path = require('path');
+const fs = require('fs');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-for-amirtha';
 
@@ -151,6 +155,31 @@ app.delete('/api/users/:id', authenticateToken, async (req, res) => {
   }
 });
 
+app.post('/api/users/bulk-delete', authenticateToken, async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No user IDs provided' });
+  }
+  try {
+    const usersRes = await db.query('SELECT id, role FROM users WHERE id = ANY($1)', [ids]);
+    for (let u of usersRes.rows) {
+      if (u.role === 'Admin') {
+        return res.status(403).json({ error: 'Cannot delete Admin accounts' });
+      }
+      if (u.role === 'Staff' && req.user.role !== 'Admin') {
+        return res.status(403).json({ error: 'Only Admin can delete Staff' });
+      }
+      if (u.role === 'Student' && req.user.role !== 'Staff') {
+        return res.status(403).json({ error: 'Only Staff can delete Students' });
+      }
+    }
+    await db.query('DELETE FROM users WHERE id = ANY($1)', [ids]);
+    res.json({ message: `${ids.length} user(s) deleted` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- EVENT FORM ROUTES ---
 
 // Create Form (Secretary only)
@@ -162,6 +191,30 @@ app.post('/api/forms', authenticateToken, authorizeSubRole('Secretary'), async (
       [event_name, req.user.id, organizer_1, organizer_2 || null, organizer_3 || null]
     );
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Form (Creator Secretary or Staff/Admin)
+app.delete('/api/forms/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const formCheck = await db.query('SELECT created_by, status FROM event_forms WHERE id = $1', [id]);
+    if (formCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Form not found' });
+    }
+    
+    const form = formCheck.rows[0];
+    const isCreatorSecretary = (req.user.role === 'Student' && req.user.sub_role === 'Secretary' && form.created_by === req.user.id);
+    const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
+    
+    if (!isCreatorSecretary && !isStaffOrAdmin) {
+      return res.status(403).json({ error: 'Only the creator Secretary or Staff/Admin can delete this form' });
+    }
+
+    await db.query('DELETE FROM event_forms WHERE id = $1', [id]);
+    res.json({ message: 'Form deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -254,6 +307,87 @@ app.put('/api/forms/:id/rounds', authenticateToken, authorizeRole('Student'), as
       'UPDATE event_forms SET round_1_details = COALESCE($1, round_1_details), round_2_details = COALESCE($2, round_2_details), round_3_details = COALESCE($3, round_3_details) WHERE id = $4 RETURNING *',
       [round_1_details, round_2_details, round_3_details, id]
     );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const multer = require('multer');
+
+// Configure storage for PPT files
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ext === '.ppt' || ext === '.pptx') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .ppt and .pptx files are allowed!'), false);
+    }
+  },
+  limits: { fileSize: 25 * 1024 * 1024 } // 25MB limit
+});
+
+// Upload PPT (Organizers only)
+app.put('/api/forms/:id/ppt', authenticateToken, authorizeRole('Student'), upload.single('ppt'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const formCheck = await db.query('SELECT status, organizer_1, organizer_2, organizer_3, ppt_filename FROM event_forms WHERE id = $1', [id]);
+    if (formCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Form not found' });
+    }
+    
+    const form = formCheck.rows[0];
+    if (form.status === 'Approved') {
+      return res.status(403).json({ error: 'Cannot upload PPT to an approved form' });
+    }
+
+    // Check if user is organizer
+    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
+    if (!isOrganizer) {
+      return res.status(403).json({ error: 'Only organizers can upload PPT' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded or file format is incorrect' });
+    }
+
+    const ppt_filename = req.file.filename;
+    const original_name = req.file.originalname;
+
+    // Delete old file if exists
+    if (form.ppt_filename) {
+      const oldPath = path.join(__dirname, 'uploads', form.ppt_filename);
+      if (fs.existsSync(oldPath)) {
+        try {
+          fs.unlinkSync(oldPath);
+        } catch (e) {
+          console.error('Failed to delete old PPT file:', e);
+        }
+      }
+    }
+
+    const result = await db.query(
+      'UPDATE event_forms SET ppt_filename = $1, ppt_original_name = $2 WHERE id = $3 RETURNING *',
+      [ppt_filename, original_name, id]
+    );
+
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

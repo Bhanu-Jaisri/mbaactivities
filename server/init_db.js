@@ -83,15 +83,17 @@ async function initDb() {
       CREATE TABLE IF NOT EXISTS event_forms (
         id SERIAL PRIMARY KEY,
         event_name VARCHAR(255) NOT NULL,
-        created_by INTEGER REFERENCES users(id),
-        organizer_1 INTEGER REFERENCES users(id) NOT NULL,
-        organizer_2 INTEGER REFERENCES users(id),
-        organizer_3 INTEGER REFERENCES users(id),
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        organizer_1 INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        organizer_2 INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        organizer_3 INTEGER REFERENCES users(id) ON DELETE SET NULL,
         status form_status DEFAULT 'Pending',
-        approved_by INTEGER REFERENCES users(id),
+        approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         round_1_details TEXT,
         round_2_details TEXT,
         round_3_details TEXT,
+        ppt_filename VARCHAR(255),
+        ppt_original_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -99,6 +101,31 @@ async function initDb() {
     // Migrate existing table
     await amirthaClient.query(`
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+      ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS ppt_filename VARCHAR(255);
+      ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS ppt_original_name VARCHAR(255);
+    `);
+
+    // Migrate constraints to add ON DELETE behavior if not already set
+    await amirthaClient.query(`
+      ALTER TABLE event_forms DROP CONSTRAINT IF EXISTS event_forms_created_by_fkey;
+      ALTER TABLE event_forms ADD CONSTRAINT event_forms_created_by_fkey 
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
+
+      ALTER TABLE event_forms DROP CONSTRAINT IF EXISTS event_forms_organizer_1_fkey;
+      ALTER TABLE event_forms ADD CONSTRAINT event_forms_organizer_1_fkey 
+        FOREIGN KEY (organizer_1) REFERENCES users(id) ON DELETE CASCADE;
+
+      ALTER TABLE event_forms DROP CONSTRAINT IF EXISTS event_forms_organizer_2_fkey;
+      ALTER TABLE event_forms ADD CONSTRAINT event_forms_organizer_2_fkey 
+        FOREIGN KEY (organizer_2) REFERENCES users(id) ON DELETE SET NULL;
+
+      ALTER TABLE event_forms DROP CONSTRAINT IF EXISTS event_forms_organizer_3_fkey;
+      ALTER TABLE event_forms ADD CONSTRAINT event_forms_organizer_3_fkey 
+        FOREIGN KEY (organizer_3) REFERENCES users(id) ON DELETE SET NULL;
+
+      ALTER TABLE event_forms DROP CONSTRAINT IF EXISTS event_forms_approved_by_fkey;
+      ALTER TABLE event_forms ADD CONSTRAINT event_forms_approved_by_fkey 
+        FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL;
     `);
 
     await amirthaClient.query(`

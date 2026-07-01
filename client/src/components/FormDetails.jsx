@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
 import { useAuth } from '../AuthContext';
-import { CheckCircle, XCircle, Edit3, Users, Printer } from 'lucide-react';
+import { CheckCircle, XCircle, Edit3, Users, Printer, Trash2 } from 'lucide-react';
 
 const FormDetails = () => {
   const { user } = useAuth();
@@ -76,6 +76,42 @@ const FormDetails = () => {
     }
   };
 
+  const getPptUrl = (filename) => {
+    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+    const uploadBase = apiBase.replace(/\/api\/?$/, '/uploads');
+    return `${uploadBase}/${filename}`;
+  };
+
+  const [uploadingFormId, setUploadingFormId] = useState(null);
+
+  const handlePptUpload = async (formId, file) => {
+    if (!file) return;
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext !== 'ppt' && ext !== 'pptx') {
+      alert('Only .ppt and .pptx files are allowed!');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('ppt', file);
+
+    setUploadingFormId(formId);
+    try {
+      await api.put(`/forms/${formId}/ppt`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      fetchForms();
+      alert('PPT uploaded successfully');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to upload PPT');
+    } finally {
+      setUploadingFormId(null);
+    }
+  };
+
   const startEditingParticipants = (form) => {
     setEditingParticipants(form.id);
     setSelectedParticipants(form.participants.map(p => p.id.toString()));
@@ -136,6 +172,22 @@ const FormDetails = () => {
       window.print();
       setPrintingFormId(null);
     }, 100);
+  };
+
+  const canDeleteForm = (form) => {
+    if (user.role === 'Admin' || user.role === 'Staff') return true;
+    if (user.role === 'Student' && user.sub_role === 'Secretary' && form.created_by === user.id) return true;
+    return false;
+  };
+
+  const handleDeleteForm = async (formId) => {
+    if (!window.confirm('Are you sure you want to delete this event form? This action cannot be undone.')) return;
+    try {
+      await api.delete(`/forms/${formId}`);
+      fetchForms();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to delete form');
+    }
   };
 
   return (
@@ -211,6 +263,12 @@ const FormDetails = () => {
               </table>
             </div>
 
+            {form.ppt_original_name && (
+              <div style={{ fontSize: '14pt', color: 'black', marginBottom: '2rem' }}>
+                <strong>Presentation (PPT):</strong> {form.ppt_original_name}
+              </div>
+            )}
+
             </div>
 
 
@@ -222,6 +280,11 @@ const FormDetails = () => {
               {form.status === 'Approved' && (
                 <button className="btn btn-secondary hide-on-print" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', border: 'none' }} onClick={() => handlePrint(form.id)}>
                   <Printer size={16} /> Print
+                </button>
+              )}
+              {canDeleteForm(form) && (
+                <button className="btn btn-danger hide-on-print" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }} onClick={() => handleDeleteForm(form.id)}>
+                  <Trash2 size={14} /> Delete
                 </button>
               )}
               <span className={`badge badge-${form.status}`}>{form.status}</span>
@@ -326,6 +389,50 @@ const FormDetails = () => {
                 <p><strong>R1:</strong> {form.round_1_details || 'N/A'}</p>
                 <p><strong>R2:</strong> {form.round_2_details || 'N/A'}</p>
                 <p><strong>R3:</strong> {form.round_3_details || 'N/A'}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Presentation (PPT) Section */}
+          <div style={{ marginBottom: '1rem' }}>
+            <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>Presentation (PPT)</h4>
+            {form.ppt_filename ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.5rem 0', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.85rem', flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  📄 {form.ppt_original_name || form.ppt_filename}
+                </span>
+                <a
+                  href={getPptUrl(form.ppt_filename)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download={form.ppt_original_name || 'presentation.pptx'}
+                  className="btn btn-secondary"
+                  style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none', display: 'inline-block' }}
+                >
+                  Download
+                </a>
+              </div>
+            ) : (
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.5rem 0' }}>No PPT uploaded yet.</p>
+            )}
+
+            {isOrganizer(form) && form.status !== 'Approved' && (
+              <div style={{ marginTop: '0.5rem' }}>
+                <input
+                  type="file"
+                  accept=".ppt,.pptx"
+                  style={{ display: 'none' }}
+                  id={`ppt-file-input-${form.id}`}
+                  onChange={(e) => handlePptUpload(form.id, e.target.files[0])}
+                  disabled={uploadingFormId === form.id}
+                />
+                <label
+                  htmlFor={`ppt-file-input-${form.id}`}
+                  className="btn btn-primary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.8rem', fontSize: '0.8rem', cursor: 'pointer' }}
+                >
+                  {uploadingFormId === form.id ? 'Uploading...' : 'Upload PPT'}
+                </label>
               </div>
             )}
           </div>
