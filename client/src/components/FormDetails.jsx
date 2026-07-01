@@ -175,6 +175,7 @@ const FormDetails = () => {
   };
 
   const canDeleteForm = (form) => {
+    if (form.status === 'Approved') return false;
     if (user.role === 'Admin' || user.role === 'Staff') return true;
     if (user.role === 'Student' && user.sub_role === 'Secretary' && form.created_by === user.id) return true;
     return false;
@@ -431,7 +432,11 @@ const FormDetails = () => {
                   className="btn btn-primary"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.8rem', fontSize: '0.8rem', cursor: 'pointer' }}
                 >
-                  {uploadingFormId === form.id ? 'Uploading...' : 'Upload PPT'}
+                  {uploadingFormId === form.id 
+                    ? 'Uploading...' 
+                    : form.ppt_filename 
+                      ? 'Change PPT' 
+                      : 'Upload PPT'}
                 </label>
               </div>
             )}

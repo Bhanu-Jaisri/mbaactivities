@@ -206,6 +206,9 @@ app.delete('/api/forms/:id', authenticateToken, async (req, res) => {
     }
     
     const form = formCheck.rows[0];
+    if (form.status === 'Approved') {
+      return res.status(400).json({ error: 'Cannot delete an approved event form' });
+    }
     const isCreatorSecretary = (req.user.role === 'Student' && req.user.sub_role === 'Secretary' && form.created_by === req.user.id);
     const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
     
