@@ -13,8 +13,9 @@ const UserManagement = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState(user.role === 'Admin' ? 'Staff' : 'Student');
-  const [subRole, setSubRole] = useState('');
+  const [subRole, setSubRole] = useState('Regular');
   const [rollNumber, setRollNumber] = useState('');
+  const [section, setSection] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -50,11 +51,13 @@ const UserManagement = () => {
         password,
         role,
         sub_role: role === 'Student' ? subRole : null,
-        roll_number: role === 'Student' ? rollNumber : null
+        roll_number: role === 'Student' ? rollNumber : null,
+        section: role === 'Student' ? section : null
       });
       setUsername('');
       setPassword('');
       setRollNumber('');
+      setSection('');
       fetchUsers();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create user');
@@ -129,6 +132,16 @@ const UserManagement = () => {
                 <input type="text" className="input" value={rollNumber} onChange={e => setRollNumber(e.target.value)} required />
               </div>
               <div className="input-group">
+                <label>Section *</label>
+                <select className="select" value={section} onChange={e => setSection(e.target.value)} required={role === 'Student'}>
+                  <option value="">Select Section</option>
+                  <option value="A">A</option>
+                  <option value="B">B</option>
+                  <option value="C">C</option>
+                  <option value="D">D</option>
+                </select>
+              </div>
+              <div className="input-group">
                 <label>Sub-Role</label>
                 <select className="select" value={subRole} onChange={e => setSubRole(e.target.value)}>
                   <option value="Regular">Regular Student</option>
@@ -167,6 +180,7 @@ const UserManagement = () => {
                 <th>ID</th>
                 <th>Username</th>
                 <th>Roll Number</th>
+                <th>Section</th>
                 <th>Role</th>
                 <th>Action</th>
               </tr>
@@ -187,6 +201,7 @@ const UserManagement = () => {
                   <td>{u.id}</td>
                   <td style={{ fontWeight: 500 }}>{u.username}</td>
                   <td>{u.roll_number || '-'}</td>
+                  <td>{u.section || '-'}</td>
                   <td>
                     <span className={`badge badge-${u.role}`}>{u.role}</span>
                     {u.sub_role && <span className="badge" style={{ marginLeft: '8px', background: 'rgba(255,255,255,0.1)' }}>{u.sub_role}</span>}
@@ -201,7 +216,7 @@ const UserManagement = () => {
                 </tr>
               ))}
               {users.length === 0 && !loading && (
-                <tr><td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No users found</td></tr>
+                <tr><td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No users found</td></tr>
               )}
             </tbody>
           </table>

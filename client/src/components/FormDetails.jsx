@@ -18,6 +18,10 @@ const FormDetails = () => {
   const [selectedParticipants, setSelectedParticipants] = useState([]);
   const [participantInput, setParticipantInput] = useState('');
 
+  // Rejection/Resubmit State
+  const [rejectingFormId, setRejectingFormId] = useState(null);
+  const [rejectionQueries, setRejectionQueries] = useState('');
+
   useEffect(() => {
     fetchForms();
     if (user.sub_role === 'Executive') {
@@ -49,7 +53,32 @@ const FormDetails = () => {
       await api.put(`/forms/${formId}/status`, { status });
       fetchForms();
     } catch (err) {
-      alert('Failed to update status');
+      alert(err.response?.data?.error || 'Failed to update status');
+    }
+  };
+
+  const submitRejection = async (formId) => {
+    if (!rejectionQueries.trim()) {
+      alert('Please enter queries/reasons for rejection.');
+      return;
+    }
+    try {
+      await api.put(`/forms/${formId}/status`, { status: 'Rejected', queries: rejectionQueries });
+      setRejectingFormId(null);
+      setRejectionQueries('');
+      fetchForms();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to submit rejection');
+    }
+  };
+
+  const handleResubmit = async (formId) => {
+    try {
+      await api.put(`/forms/${formId}/resubmit`);
+      fetchForms();
+      alert('Form resubmitted successfully!');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to resubmit form');
     }
   };
 
@@ -158,6 +187,16 @@ const FormDetails = () => {
     return [form.organizer_1, form.organizer_2, form.organizer_3].includes(user.id);
   };
 
+  const isFormComplete = (form) => {
+    return (
+      form.event_name && form.event_name.trim() !== '' &&
+      form.organizer_1 &&
+      form.ppt_filename && form.ppt_filename.trim() !== '' &&
+      form.round_1_details && form.round_1_details.trim() !== '' &&
+      form.participants && form.participants.length > 0
+    );
+  };
+
   const toggleExpand = (formId) => {
     setExpandedForms(prev => prev.includes(formId) ? prev.filter(id => id !== formId) : [...prev, formId]);
   };
@@ -176,7 +215,7 @@ const FormDetails = () => {
 
   const canDeleteForm = (form) => {
     if (form.status === 'Approved') return false;
-    if (user.role === 'Admin' || user.role === 'Staff') return true;
+    if (user.role === 'Admin') return true;
     if (user.role === 'Student' && user.sub_role === 'Secretary' && form.created_by === user.id) return true;
     return false;
   };
@@ -216,7 +255,9 @@ const FormDetails = () => {
             </div>
 
             <div style={{ marginBottom: '2rem', fontSize: '14pt', color: 'black' }}>
-              <strong>Staff Approval:</strong> {form.approved_by_name || 'Pending'}
+              <strong>Decision Status:</strong> {form.status}
+              {form.approved_by_name && ` (by ${form.approved_by_name}, Section ${form.approved_by_section || 'N/A'})`}
+              {form.status === 'Rejected' && form.rejection_queries && ` - Queries: ${form.rejection_queries}`}
             </div>
 
             <div style={{ fontSize: '14pt', color: 'black', marginBottom: '2rem' }}>
@@ -309,7 +350,23 @@ const FormDetails = () => {
             <>
               <div style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-muted)' }}>
                 <p><strong>Organizers:</strong> {form.org1_name} {form.org2_name ? `, ${form.org2_name}` : ''} {form.org3_name ? `, ${form.org3_name}` : ''}</p>
-                {form.approved_by_name && <p><strong>Decision By:</strong> {form.approved_by_name}</p>}
+                {form.status === 'Approved' && form.approved_by_name && (
+                  <p style={{ color: '#34D399', fontWeight: 500 }}>
+                    ✓ Approved by {form.approved_by_name} (Section {form.approved_by_section || 'N/A'})
+                  </p>
+                )}
+                {form.status === 'Rejected' && form.approved_by_name && (
+                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', padding: '0.75rem', borderRadius: '8px', marginTop: '0.5rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                    <p style={{ color: '#F87171', fontWeight: 500, margin: 0 }}>
+                      ✗ Rejected by {form.approved_by_name} (Section {form.approved_by_section || 'N/A'})
+                    </p>
+                    {form.rejection_queries && (
+                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        <strong>Queries:</strong> {form.rejection_queries}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <hr style={{ borderColor: 'var(--surface-border)', margin: '1rem 0' }} />
@@ -442,14 +499,52 @@ const FormDetails = () => {
             )}
           </div>
 
-          {/* Staff Actions */}
-          {user.role === 'Staff' && form.status === 'Pending' && (
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-              <button className="btn btn-primary" style={{ flex: 1, background: 'var(--secondary)' }} onClick={() => handleStatusChange(form.id, 'Approved')}>
-                <CheckCircle size={16} /> Approve
-              </button>
-              <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => handleStatusChange(form.id, 'Rejected')}>
-                <XCircle size={16} /> Reject
+          {/* Approval Actions (Secretary/Executive Student only) */}
+          {user.role === 'Student' && ['Secretary', 'Executive'].includes(user.sub_role) && form.status === 'Pending' && (
+            (!isFormComplete(form) || editingParticipants === form.id) ? (
+              <div style={{ marginTop: '1rem', background: 'rgba(245, 158, 11, 0.1)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '0.85rem', color: '#F59E0B' }}>
+                ⚠ All details (Event Name, Round 1 details, PPT file, and saved Participants) must be completed before you can Approve or Reject.
+              </div>
+            ) : rejectingFormId === form.id ? (
+              <div style={{ marginTop: '1rem', background: 'rgba(239, 68, 68, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: 500 }}>Rejection Queries / Reasons</label>
+                <textarea
+                  className="textarea"
+                  placeholder="Enter details of why this form is being rejected..."
+                  value={rejectionQueries}
+                  onChange={(e) => setRejectionQueries(e.target.value)}
+                  style={{ width: '100%', marginBottom: '0.5rem', minHeight: '80px' }}
+                  required
+                />
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button className="btn btn-danger" onClick={() => submitRejection(form.id)}>Submit Rejection</button>
+                  <button className="btn btn-secondary" onClick={() => setRejectingFormId(null)}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                <button className="btn btn-primary" style={{ flex: 1, background: 'var(--secondary)' }} onClick={() => handleStatusChange(form.id, 'Approved')}>
+                  <CheckCircle size={16} /> Approve
+                </button>
+                <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { setRejectingFormId(form.id); setRejectionQueries(''); }}>
+                  <XCircle size={16} /> Reject
+                </button>
+              </div>
+            )
+          )}
+
+          {/* Organizer Resubmit Action */}
+          {isOrganizer(form) && form.status === 'Rejected' && (
+            <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+              <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: '#60A5FA', fontWeight: 500 }}>
+                Form has rejection queries. Edit rounds or PPT above, then click below to resubmit.
+              </p>
+              <button
+                className="btn btn-primary"
+                style={{ width: '100%', background: '#3B82F6' }}
+                onClick={() => handleResubmit(form.id)}
+              >
+                Resubmit Form
               </button>
             </div>
           )}

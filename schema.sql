@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     role user_role NOT NULL,
     sub_role student_subrole,
-    roll_number VARCHAR(255) UNIQUE
+    roll_number VARCHAR(255) UNIQUE,
+    section VARCHAR(10)
 );
 
 -- 3. Create Event Forms Table
@@ -47,6 +48,9 @@ CREATE TABLE IF NOT EXISTS event_forms (
     round_1_details TEXT,
     round_2_details TEXT,
     round_3_details TEXT,
+    ppt_filename VARCHAR(255),
+    ppt_original_name VARCHAR(255),
+    rejection_queries TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

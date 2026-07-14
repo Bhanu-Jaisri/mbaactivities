@@ -70,13 +70,15 @@ async function initDb() {
         password_hash VARCHAR(255) NOT NULL,
         role user_role NOT NULL,
         sub_role student_subrole,
-        roll_number VARCHAR(255) UNIQUE
+        roll_number VARCHAR(255) UNIQUE,
+        section VARCHAR(10)
       );
     `);
 
-    // Migrate existing table just in case it was already created without roll_number
+    // Migrate existing table just in case it was already created without roll_number or section
     await amirthaClient.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS roll_number VARCHAR(255) UNIQUE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS section VARCHAR(10);
     `);
 
     await amirthaClient.query(`
@@ -94,6 +96,7 @@ async function initDb() {
         round_3_details TEXT,
         ppt_filename VARCHAR(255),
         ppt_original_name VARCHAR(255),
+        rejection_queries TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -103,6 +106,7 @@ async function initDb() {
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS ppt_filename VARCHAR(255);
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS ppt_original_name VARCHAR(255);
+      ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS rejection_queries TEXT;
     `);
 
     // Migrate constraints to add ON DELETE behavior if not already set

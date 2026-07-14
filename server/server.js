@@ -77,11 +77,11 @@ app.post('/api/auth/login', async (req, res) => {
     console.log('Login successful, generating token...');
 
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role, sub_role: user.sub_role },
+      { id: user.id, username: user.username, role: user.role, sub_role: user.sub_role, section: user.section },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-    res.json({ token, user: { id: user.id, username: user.username, role: user.role, sub_role: user.sub_role } });
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role, sub_role: user.sub_role, section: user.section } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -91,7 +91,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/users', authenticateToken, async (req, res) => {
   // Only Admin or Staff can view all users, or maybe we need Students to be viewed by Staff/Secretary/Executive
   try {
-    const result = await db.query('SELECT id, username, role, sub_role, roll_number FROM users');
+    const result = await db.query('SELECT id, username, role, sub_role, roll_number, section FROM users');
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -99,7 +99,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/users', authenticateToken, async (req, res) => {
-  const { username, password, role, sub_role, roll_number } = req.body;
+  const { username, password, role, sub_role, roll_number, section } = req.body;
   
   // Logic for creation permissions:
   // Admin can create Staff
@@ -116,12 +116,15 @@ app.post('/api/users', authenticateToken, async (req, res) => {
   if (role === 'Student' && (!roll_number || roll_number.trim() === '')) {
     return res.status(400).json({ error: 'Roll number is required for students' });
   }
+  if (role === 'Student' && (!section || !['A', 'B', 'C', 'D'].includes(section))) {
+    return res.status(400).json({ error: 'Section (A, B, C, or D) is required for students' });
+  }
 
   try {
     // Saving password directly in plain text
     const result = await db.query(
-      'INSERT INTO users (username, password_hash, role, sub_role, roll_number) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, role, sub_role, roll_number',
-      [username, password, role, sub_role || null, roll_number || null]
+      'INSERT INTO users (username, password_hash, role, sub_role, roll_number, section) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, role, sub_role, roll_number, section',
+      [username, password, role, sub_role || null, roll_number || null, section || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -233,7 +236,8 @@ app.get('/api/forms', authenticateToken, async (req, res) => {
         o1.username as org1_name,
         o2.username as org2_name,
         o3.username as org3_name,
-        a.username as approved_by_name
+        a.username as approved_by_name,
+        a.section as approved_by_section
       FROM event_forms f
       LEFT JOIN users u1 ON f.created_by = u1.id
       LEFT JOIN users o1 ON f.organizer_1 = o1.id
@@ -397,18 +401,76 @@ app.put('/api/forms/:id/ppt', authenticateToken, authorizeRole('Student'), uploa
   }
 });
 
-// Approve/Reject (Staff only)
-app.put('/api/forms/:id/status', authenticateToken, authorizeRole('Staff'), async (req, res) => {
+// Approve/Reject (Secretary/Executive Student only)
+app.put('/api/forms/:id/status', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body; // 'Approved' or 'Rejected'
+  const { status, queries } = req.body; // 'Approved' or 'Rejected', queries is optional/required for rejection
+
+  // Check role: must be Student and sub_role is Secretary or Executive
+  if (req.user.role !== 'Student' || !['Secretary', 'Executive'].includes(req.user.sub_role)) {
+    return res.status(403).json({ error: 'Only Secretary or Executive can approve or reject event forms' });
+  }
+
   if (!['Approved', 'Rejected'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
 
   try {
+    // Check if form is complete (has event_name, all 3 rounds details, ppt_filename, and at least 1 participant)
+    const formCheck = await db.query(`
+      SELECT f.*,
+        (SELECT COUNT(*) FROM form_participants WHERE form_id = f.id) as participant_count
+      FROM event_forms f
+      WHERE f.id = $1
+    `, [id]);
+
+    if (formCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Form not found' });
+    }
+
+    const form = formCheck.rows[0];
+    if (
+      !form.event_name || form.event_name.trim() === '' ||
+      !form.organizer_1 ||
+      !form.ppt_filename || form.ppt_filename.trim() === '' ||
+      !form.round_1_details || form.round_1_details.trim() === '' ||
+      parseInt(form.participant_count) === 0
+    ) {
+      return res.status(400).json({
+        error: 'Cannot approve or reject: All event details (Event name, Round 1 details, PPT file, and saved participants) must be filled out.'
+      });
+    }
+
     const result = await db.query(
-      'UPDATE event_forms SET status = $1, approved_by = $2 WHERE id = $3 RETURNING *',
-      [status, req.user.id, id]
+      'UPDATE event_forms SET status = $1, approved_by = $2, rejection_queries = $3 WHERE id = $4 RETURNING *',
+      [status, req.user.id, status === 'Rejected' ? (queries || null) : null, id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Resubmit Form (Organizers only)
+app.put('/api/forms/:id/resubmit', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const formCheck = await db.query('SELECT status, organizer_1, organizer_2, organizer_3 FROM event_forms WHERE id = $1', [id]);
+    if (formCheck.rows.length === 0) return res.status(404).json({ error: 'Form not found' });
+
+    const form = formCheck.rows[0];
+    if (form.status !== 'Rejected') {
+      return res.status(400).json({ error: 'Only rejected forms can be resubmitted' });
+    }
+
+    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
+    if (!isOrganizer) {
+      return res.status(403).json({ error: 'Only organizers can resubmit the form' });
+    }
+
+    const result = await db.query(
+      "UPDATE event_forms SET status = 'Pending' WHERE id = $1 RETURNING *",
+      [id]
     );
     res.json(result.rows[0]);
   } catch (err) {
