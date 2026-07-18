@@ -55,7 +55,7 @@ const Dashboard = () => {
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontWeight: '600' }}>{user.username}</div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              {user.role} {user.sub_role ? `(${user.sub_role})` : ''} {user.section ? `- Sec ${user.section}` : ''}
+              {user.role} {user.sub_role ? `(${user.sub_role})` : ''} {user.section ? `- Sec ${user.section}` : ''}{user.year ? ` - ${user.year}` : ''}
             </div>
           </div>
           <button onClick={logout} className="btn" style={{ padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#FCA5A5' }}>

@@ -22,6 +22,33 @@ const FormDetails = () => {
   const [rejectingFormId, setRejectingFormId] = useState(null);
   const [rejectionQueries, setRejectionQueries] = useState('');
 
+  const [activeTab, setActiveTab] = useState('active');
+  const [filterDate, setFilterDate] = useState('');
+
+  const canCompleteForm = (form) => {
+    if (form.status !== 'Approved') return false;
+    if (user.role === 'Admin' || user.role === 'Staff') return true;
+    if (user.role === 'Student') {
+      const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(user.id);
+      const isCreator = form.created_by === user.id;
+      const isSecOrExec = ['Secretary', 'Executive'].includes(user.sub_role);
+      return isOrganizer || isCreator || isSecOrExec;
+    }
+    return false;
+  };
+
+  const handleCompleteChange = async (formId, isCompleted) => {
+    const actionText = isCompleted ? 'mark this event as completed' : 'reopen this event';
+    if (!window.confirm(`Are you sure you want to ${actionText}?`)) return;
+    try {
+      await api.put(`/forms/${formId}/complete`, { is_completed: isCompleted });
+      fetchForms();
+      alert(`Event successfully ${isCompleted ? 'marked as completed' : 'reopened'}!`);
+    } catch (err) {
+      alert(err.response?.data?.error || `Failed to ${isCompleted ? 'complete' : 'reopen'} event`);
+    }
+  };
+
   useEffect(() => {
     fetchForms();
     if (user.sub_role === 'Executive') {
@@ -230,9 +257,82 @@ const FormDetails = () => {
     }
   };
 
+  const filteredForms = forms.filter(form => {
+    // 1. Tab check
+    const matchesTab = activeTab === 'completed' ? form.is_completed : !form.is_completed;
+    if (!matchesTab) return false;
+
+    // 2. Date check
+    if (filterDate) {
+      const formDate = new Date(form.created_at);
+      const selectedDate = new Date(filterDate);
+      const isSameDay = 
+        formDate.getFullYear() === selectedDate.getFullYear() &&
+        formDate.getMonth() === selectedDate.getMonth() &&
+        formDate.getDate() === selectedDate.getDate();
+      if (!isSameDay) return false;
+    }
+
+    return true;
+  });
+
   return (
-    <div className="grid print-container">
-      {forms.map(form => {
+    <div>
+      {/* Tabs and Date Filters */}
+      <div className="hide-on-print" style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        flexWrap: 'wrap',
+        gap: '1rem', 
+        marginBottom: '1.5rem', 
+        borderBottom: '1px solid var(--surface-border)', 
+        paddingBottom: '0.75rem' 
+      }}>
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <button 
+            onClick={() => setActiveTab('active')} 
+            className={`btn ${activeTab === 'active' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '0.5rem 1.25rem', fontSize: '0.9rem' }}
+          >
+            Active Forms
+          </button>
+          <button 
+            onClick={() => setActiveTab('completed')} 
+            className={`btn ${activeTab === 'completed' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '0.5rem 1.25rem', fontSize: '0.9rem' }}
+          >
+            Completed Folder
+          </button>
+        </div>
+
+        {/* Date Filter Input */}
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Filter by Date:</span>
+            <input 
+              type="date" 
+              className="input" 
+              style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem', background: 'var(--input-bg)' }}
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+            />
+          </div>
+          {filterDate && (
+            <button 
+              className="btn btn-secondary" 
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderColor: 'var(--danger)', color: '#F87171' }}
+              onClick={() => setFilterDate('')}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid print-container">
+        {filteredForms.map(form => {
         const isExpanded = expandedForms.includes(form.id);
         const printClass = printingFormId ? (printingFormId === form.id ? 'print-target' : 'no-print') : '';
         return (
@@ -330,6 +430,7 @@ const FormDetails = () => {
                 </button>
               )}
               <span className={`badge badge-${form.status}`}>{form.status}</span>
+              {form.is_completed && <span className="badge badge-Approved" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34D399', marginLeft: '0.5rem' }}>Completed</span>}
             </div>
           </div>
           
@@ -548,12 +649,65 @@ const FormDetails = () => {
               </button>
             </div>
           )}
+
+          {/* Completion Section for Approved Active Events */}
+          {form.status === 'Approved' && !form.is_completed && canCompleteForm(form) && (
+            <div style={{ 
+              marginTop: '1.5rem', 
+              background: 'rgba(99, 102, 241, 0.1)', 
+              padding: '1rem', 
+              borderRadius: '8px', 
+              border: '1px solid rgba(99, 102, 241, 0.2)',
+              textAlign: 'center'
+            }}>
+              <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: '#818CF8', fontWeight: 500 }}>
+                Is this event completed?
+              </p>
+              <button 
+                className="btn btn-primary" 
+                style={{ width: '100%', background: 'var(--primary)' }}
+                onClick={() => handleCompleteChange(form.id, true)}
+              >
+                Mark as Completed
+              </button>
+            </div>
+          )}
+
+          {/* Completed Event Section */}
+          {form.is_completed && (
+            <div style={{ 
+              marginTop: '1.5rem', 
+              background: 'rgba(52, 211, 153, 0.1)', 
+              padding: '1rem', 
+              borderRadius: '8px', 
+              border: '1px solid rgba(52, 211, 153, 0.2)',
+              textAlign: 'center'
+            }}>
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#34D399', fontWeight: 600 }}>
+                ✓ This event is Completed
+              </p>
+              {canCompleteForm(form) && (
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ width: '100%', marginTop: '0.5rem', padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                  onClick={() => handleCompleteChange(form.id, false)}
+                >
+                  Reopen Event
+                </button>
+              )}
+            </div>
+          )}
             </>
           )}
           </div>
         </div>
       )})}
-      {forms.length === 0 && <p style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-muted)' }}>No event forms found.</p>}
+      {filteredForms.length === 0 && (
+        <p style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-muted)', padding: '2rem 0' }}>
+          {activeTab === 'completed' ? 'No completed events found.' : 'No active event forms found.'}
+        </p>
+      )}
+      </div>
     </div>
   );
 };

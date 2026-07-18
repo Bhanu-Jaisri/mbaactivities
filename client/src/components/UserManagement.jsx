@@ -16,6 +16,7 @@ const UserManagement = () => {
   const [subRole, setSubRole] = useState('Regular');
   const [rollNumber, setRollNumber] = useState('');
   const [section, setSection] = useState('');
+  const [year, setYear] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -52,12 +53,14 @@ const UserManagement = () => {
         role,
         sub_role: role === 'Student' ? subRole : null,
         roll_number: role === 'Student' ? rollNumber : null,
-        section: role === 'Student' ? section : null
+        section: role === 'Student' ? section : null,
+        year: role === 'Student' ? year : null
       });
       setUsername('');
       setPassword('');
       setRollNumber('');
       setSection('');
+      setYear('');
       fetchUsers();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create user');
@@ -142,6 +145,14 @@ const UserManagement = () => {
                 </select>
               </div>
               <div className="input-group">
+                <label>Year *</label>
+                <select className="select" value={year} onChange={e => setYear(e.target.value)} required={role === 'Student'}>
+                  <option value="">Select Year</option>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                </select>
+              </div>
+              <div className="input-group">
                 <label>Sub-Role</label>
                 <select className="select" value={subRole} onChange={e => setSubRole(e.target.value)}>
                   <option value="Regular">Regular Student</option>
@@ -181,6 +192,7 @@ const UserManagement = () => {
                 <th>Username</th>
                 <th>Roll Number</th>
                 <th>Section</th>
+                <th>Year</th>
                 <th>Role</th>
                 <th>Action</th>
               </tr>
@@ -202,6 +214,7 @@ const UserManagement = () => {
                   <td style={{ fontWeight: 500 }}>{u.username}</td>
                   <td>{u.roll_number || '-'}</td>
                   <td>{u.section || '-'}</td>
+                  <td>{u.year || '-'}</td>
                   <td>
                     <span className={`badge badge-${u.role}`}>{u.role}</span>
                     {u.sub_role && <span className="badge" style={{ marginLeft: '8px', background: 'rgba(255,255,255,0.1)' }}>{u.sub_role}</span>}
@@ -216,7 +229,7 @@ const UserManagement = () => {
                 </tr>
               ))}
               {users.length === 0 && !loading && (
-                <tr><td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No users found</td></tr>
+                <tr><td colSpan="8" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No users found</td></tr>
               )}
             </tbody>
           </table>

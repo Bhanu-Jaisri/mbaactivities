@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS users (
     role user_role NOT NULL,
     sub_role student_subrole,
     roll_number VARCHAR(255) UNIQUE,
-    section VARCHAR(10)
+    section VARCHAR(10),
+    year VARCHAR(50)
 );
 
 -- 3. Create Event Forms Table
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS event_forms (
     ppt_filename VARCHAR(255),
     ppt_original_name VARCHAR(255),
     rejection_queries TEXT,
+    is_completed BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

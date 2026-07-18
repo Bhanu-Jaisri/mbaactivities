@@ -77,11 +77,11 @@ app.post('/api/auth/login', async (req, res) => {
     console.log('Login successful, generating token...');
 
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role, sub_role: user.sub_role, section: user.section },
+      { id: user.id, username: user.username, role: user.role, sub_role: user.sub_role, section: user.section, year: user.year },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-    res.json({ token, user: { id: user.id, username: user.username, role: user.role, sub_role: user.sub_role, section: user.section } });
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role, sub_role: user.sub_role, section: user.section, year: user.year } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -91,7 +91,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/users', authenticateToken, async (req, res) => {
   // Only Admin or Staff can view all users, or maybe we need Students to be viewed by Staff/Secretary/Executive
   try {
-    const result = await db.query('SELECT id, username, role, sub_role, roll_number, section FROM users');
+    const result = await db.query('SELECT id, username, role, sub_role, roll_number, section, year FROM users');
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -99,7 +99,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/users', authenticateToken, async (req, res) => {
-  const { username, password, role, sub_role, roll_number, section } = req.body;
+  const { username, password, role, sub_role, roll_number, section, year } = req.body;
   
   // Logic for creation permissions:
   // Admin can create Staff
@@ -119,12 +119,15 @@ app.post('/api/users', authenticateToken, async (req, res) => {
   if (role === 'Student' && (!section || !['A', 'B', 'C', 'D'].includes(section))) {
     return res.status(400).json({ error: 'Section (A, B, C, or D) is required for students' });
   }
+  if (role === 'Student' && (!year || !['1st Year', '2nd Year'].includes(year))) {
+    return res.status(400).json({ error: 'Year (1st Year or 2nd Year) is required for students' });
+  }
 
   try {
     // Saving password directly in plain text
     const result = await db.query(
-      'INSERT INTO users (username, password_hash, role, sub_role, roll_number, section) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, role, sub_role, roll_number, section',
-      [username, password, role, sub_role || null, roll_number || null, section || null]
+      'INSERT INTO users (username, password_hash, role, sub_role, roll_number, section, year) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, username, role, sub_role, roll_number, section, year',
+      [username, password, role, sub_role || null, roll_number || null, section || null, year || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -445,6 +448,47 @@ app.put('/api/forms/:id/status', authenticateToken, async (req, res) => {
       'UPDATE event_forms SET status = $1, approved_by = $2, rejection_queries = $3 WHERE id = $4 RETURNING *',
       [status, req.user.id, status === 'Rejected' ? (queries || null) : null, id]
     );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Complete/Reopen Event Form
+app.put('/api/forms/:id/complete', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { is_completed } = req.body;
+
+  if (typeof is_completed !== 'boolean') {
+    return res.status(400).json({ error: 'is_completed must be a boolean' });
+  }
+
+  try {
+    const formCheck = await db.query('SELECT * FROM event_forms WHERE id = $1', [id]);
+    if (formCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Form not found' });
+    }
+
+    const form = formCheck.rows[0];
+    if (form.status !== 'Approved') {
+      return res.status(400).json({ error: 'Only approved event forms can be marked as completed' });
+    }
+
+    // Check authorization: Admin, Staff, or authorized Student (creator, organizer, Secretary, or Executive)
+    const isStaffOrAdmin = req.user.role === 'Admin' || req.user.role === 'Staff';
+    const isCreator = form.created_by === req.user.id;
+    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
+    const isSecOrExec = req.user.role === 'Student' && ['Secretary', 'Executive'].includes(req.user.sub_role);
+
+    if (!isStaffOrAdmin && !isCreator && !isOrganizer && !isSecOrExec) {
+      return res.status(403).json({ error: 'You are not authorized to change the completion status of this event' });
+    }
+
+    const result = await db.query(
+      'UPDATE event_forms SET is_completed = $1 WHERE id = $2 RETURNING *',
+      [is_completed, id]
+    );
+
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
