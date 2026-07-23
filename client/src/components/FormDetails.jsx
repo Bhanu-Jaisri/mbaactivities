@@ -37,6 +37,15 @@ const FormDetails = () => {
     return false;
   };
 
+  const getAutoDeleteDays = (completedAt) => {
+    if (!completedAt) return null;
+    const completedDate = new Date(completedAt);
+    const deleteDate = new Date(completedDate.getTime() + 60 * 24 * 60 * 60 * 1000); // 60 days
+    const timeDiff = deleteDate.getTime() - new Date().getTime();
+    const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+    return daysDiff > 0 ? daysDiff : 0;
+  };
+
   const handleCompleteChange = async (formId, isCompleted) => {
     const actionText = isCompleted ? 'mark this event as completed' : 'reopen this event';
     if (!window.confirm(`Are you sure you want to ${actionText}?`)) return;
@@ -431,13 +440,25 @@ const FormDetails = () => {
                 </button>
               )}
               <span className={`badge badge-${form.status}`}>{form.status}</span>
-              {form.is_completed && <span className="badge badge-Approved" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34D399', marginLeft: '0.5rem' }}>Completed</span>}
+               {form.is_completed && (
+                <span className="badge badge-Approved" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34D399', marginLeft: '0.5rem' }}>
+                  Completed
+                </span>
+              )}
             </div>
           </div>
           
           <div style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-muted)' }}>
             <p><strong>Created By:</strong> {form.created_by_name}</p>
             <p><strong>Date:</strong> {new Date(form.created_at).toLocaleDateString()}</p>
+            {form.is_completed && form.completed_at && (() => {
+              const days = getAutoDeleteDays(form.completed_at);
+              return (
+                <p style={{ color: '#F87171', fontWeight: 500, marginTop: '0.25rem' }}>
+                  <strong>Auto-deletes in:</strong> {days} {days === 1 ? 'day' : 'days'}
+                </p>
+              );
+            })()}
           </div>
 
           <button 
@@ -478,7 +499,7 @@ const FormDetails = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4 style={{ margin: 0, fontSize: '1rem' }}><Users size={16} style={{ verticalAlign: 'middle' }}/> Participants</h4>
               {user.sub_role === 'Executive' && editingParticipants !== form.id && form.status !== 'Approved' && (
-                <button className="btn" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingParticipants(form)}>
+                <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingParticipants(form)}>
                   <Edit3 size={14} /> Edit
                 </button>
               )}
@@ -528,7 +549,7 @@ const FormDetails = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4 style={{ margin: 0, fontSize: '1rem' }}>Rounds</h4>
               {isOrganizer(form) && editingRounds !== form.id && form.status !== 'Approved' && (
-                <button className="btn" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingRounds(form)}>
+                <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingRounds(form)}>
                   <Edit3 size={14} /> Edit
                 </button>
               )}

@@ -131,6 +131,42 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     );
     res.json(result.rows[0]);
   } catch (err) {
+    if (err.code === '23505') {
+      if (err.constraint === 'users_username_key') {
+        return res.status(400).json({ error: 'Username is already taken' });
+      }
+      if (err.constraint === 'users_roll_number_key') {
+        return res.status(400).json({ error: 'Roll Number is already registered' });
+      }
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/users/promote-first-year', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'Staff' && req.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Only Staff/Admin can promote students' });
+  }
+  try {
+    const result = await db.query(
+      "UPDATE users SET year = '2nd Year' WHERE role = 'Student' AND year = '1st Year' RETURNING id"
+    );
+    res.json({ message: `${result.rowCount} student(s) promoted to 2nd Year` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/remove-second-year', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'Staff' && req.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Only Staff/Admin can delete students' });
+  }
+  try {
+    const result = await db.query(
+      "DELETE FROM users WHERE role = 'Student' AND year = '2nd Year' RETURNING id"
+    );
+    res.json({ message: `${result.rowCount} student(s) removed` });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -156,6 +192,48 @@ app.delete('/api/users/:id', authenticateToken, async (req, res) => {
 
     await db.query('DELETE FROM users WHERE id = $1', [id]);
     res.json({ message: 'User deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update individual user details (e.g. username)
+app.put('/api/users/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { username } = req.body;
+
+  if (!username || username.trim() === '') {
+    return res.status(400).json({ error: 'Username is required' });
+  }
+
+  try {
+    const targetUserRes = await db.query('SELECT role FROM users WHERE id = $1', [id]);
+    if (targetUserRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const targetRole = targetUserRes.rows[0].role;
+
+    // Admin can edit Staff/Students. Staff can edit Students.
+    if (targetRole === 'Student' && req.user.role !== 'Staff' && req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Only Staff and Admin can edit Student accounts' });
+    }
+    if (targetRole === 'Staff' && req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Only Admin can edit Staff accounts' });
+    }
+    if (targetRole === 'Admin') {
+      return res.status(403).json({ error: 'Cannot edit Admin accounts' });
+    }
+
+    // Check if the username is already taken by another user
+    const checkUser = await db.query('SELECT id FROM users WHERE username = $1 AND id <> $2', [username, id]);
+    if (checkUser.rows.length > 0) {
+      return res.status(400).json({ error: 'Username is already taken' });
+    }
+
+    const result = await db.query(
+      'UPDATE users SET username = $1 WHERE id = $2 RETURNING *',
+      [username, id]
+    );
+
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -485,7 +563,7 @@ app.put('/api/forms/:id/complete', authenticateToken, async (req, res) => {
     }
 
     const result = await db.query(
-      'UPDATE event_forms SET is_completed = $1 WHERE id = $2 RETURNING *',
+      `UPDATE event_forms SET is_completed = $1, completed_at = ${is_completed ? 'NOW()' : 'NULL'} WHERE id = $2 RETURNING *`,
       [is_completed, id]
     );
 
@@ -521,6 +599,43 @@ app.put('/api/forms/:id/resubmit', authenticateToken, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Auto-delete completed event forms older than 2 months (60 days)
+async function cleanOldCompletedForms() {
+  try {
+    // 1. Fetch form ids and associated PPT files older than 2 months
+    const oldForms = await db.query(
+      "SELECT id, ppt_filename FROM event_forms WHERE is_completed = true AND completed_at < NOW() - INTERVAL '2 months'"
+    );
+
+    if (oldForms.rows.length > 0) {
+      // 2. Delete PPT files from disk
+      for (const form of oldForms.rows) {
+        if (form.ppt_filename) {
+          const filePath = path.join(__dirname, 'uploads', form.ppt_filename);
+          if (fs.existsSync(filePath)) {
+            try {
+              fs.unlinkSync(filePath);
+            } catch (e) {
+              console.error(`Failed to delete PPT file for auto-deleted form ${form.id}:`, e);
+            }
+          }
+        }
+      }
+
+      // 3. Delete from database
+      const formIds = oldForms.rows.map(f => f.id);
+      await db.query("DELETE FROM event_forms WHERE id = ANY($1)", [formIds]);
+      console.log(`Auto-deleted completed forms older than 2 months: ${formIds.join(', ')}`);
+    }
+  } catch (err) {
+    console.error('Failed to auto-delete old completed forms:', err);
+  }
+}
+
+// Run cleanup check immediately on startup, and then every 12 hours
+cleanOldCompletedForms();
+setInterval(cleanOldCompletedForms, 12 * 60 * 60 * 1000);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

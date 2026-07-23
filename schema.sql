@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS event_forms (
     ppt_original_name VARCHAR(255),
     rejection_queries TEXT,
     is_completed BOOLEAN DEFAULT FALSE,
+    completed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

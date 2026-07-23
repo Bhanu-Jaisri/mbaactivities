@@ -100,6 +100,7 @@ async function initDb() {
         ppt_original_name VARCHAR(255),
         rejection_queries TEXT,
         is_completed BOOLEAN DEFAULT FALSE,
+        completed_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -111,6 +112,7 @@ async function initDb() {
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS ppt_original_name VARCHAR(255);
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS rejection_queries TEXT;
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS is_completed BOOLEAN DEFAULT FALSE;
+      ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
     `);
 
     // Migrate constraints to add ON DELETE behavior if not already set
