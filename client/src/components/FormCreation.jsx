@@ -7,6 +7,15 @@ const FormCreation = () => {
   const [org1, setOrg1] = useState('');
   const [org2, setOrg2] = useState('');
   const [org3, setOrg3] = useState('');
+  
+  // Organizer Filter States
+  const [org1Year, setOrg1Year] = useState('');
+  const [org1Section, setOrg1Section] = useState('');
+  const [org2Year, setOrg2Year] = useState('');
+  const [org2Section, setOrg2Section] = useState('');
+  const [org3Year, setOrg3Year] = useState('');
+  const [org3Section, setOrg3Section] = useState('');
+
   const [users, setUsers] = useState([]);
   const navigate = useNavigate();
 
@@ -22,6 +31,19 @@ const FormCreation = () => {
     };
     fetchUsers();
   }, []);
+
+  const getFilteredStudents = (selectedYear, selectedSection) => {
+    return users.filter(u => {
+      if (u.role !== 'Student') return false;
+      if (selectedYear && u.year !== selectedYear) return false;
+      if (selectedSection && u.section !== selectedSection) return false;
+      return true;
+    });
+  };
+
+  const filteredStudents1 = getFilteredStudents(org1Year, org1Section);
+  const filteredStudents2 = getFilteredStudents(org2Year, org2Section);
+  const filteredStudents3 = getFilteredStudents(org3Year, org3Section);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -63,18 +85,142 @@ const FormCreation = () => {
         </div>
         
         <div className="input-group">
-          <label>Organizer 1 Roll Number *</label>
-          <input type="text" className="input" value={org1} onChange={e => setOrg1(e.target.value)} required placeholder="Enter roll number" />
+          <label>Organizer 1 *</label>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <select 
+              className="select" 
+              value={org1Year} 
+              onChange={e => {
+                setOrg1Year(e.target.value);
+                setOrg1('');
+              }}
+              style={{ flex: 1, padding: '0.5rem' }}
+            >
+              <option value="">All Years</option>
+              <option value="1st Year">1st Year</option>
+              <option value="2nd Year">2nd Year</option>
+            </select>
+            <select 
+              className="select" 
+              value={org1Section} 
+              onChange={e => {
+                setOrg1Section(e.target.value);
+                setOrg1('');
+              }}
+              style={{ flex: 1, padding: '0.5rem' }}
+            >
+              <option value="">All Sections</option>
+              <option value="A">Sec A</option>
+              <option value="B">Sec B</option>
+              <option value="C">Sec C</option>
+              <option value="D">Sec D</option>
+            </select>
+          </div>
+          <select 
+            className="select" 
+            value={org1} 
+            onChange={e => setOrg1(e.target.value)} 
+            required 
+          >
+            <option value="">Select Student</option>
+            {filteredStudents1.map(u => (
+              <option key={u.id} value={u.roll_number || u.username}>
+                {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'})
+              </option>
+            ))}
+          </select>
+        </div>
+        
+        <div className="input-group">
+          <label>Organizer 2 (Optional)</label>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <select 
+              className="select" 
+              value={org2Year} 
+              onChange={e => {
+                setOrg2Year(e.target.value);
+                setOrg2('');
+              }}
+              style={{ flex: 1, padding: '0.5rem' }}
+            >
+              <option value="">All Years</option>
+              <option value="1st Year">1st Year</option>
+              <option value="2nd Year">2nd Year</option>
+            </select>
+            <select 
+              className="select" 
+              value={org2Section} 
+              onChange={e => {
+                setOrg2Section(e.target.value);
+                setOrg2('');
+              }}
+              style={{ flex: 1, padding: '0.5rem' }}
+            >
+              <option value="">All Sections</option>
+              <option value="A">Sec A</option>
+              <option value="B">Sec B</option>
+              <option value="C">Sec C</option>
+              <option value="D">Sec D</option>
+            </select>
+          </div>
+          <select 
+            className="select" 
+            value={org2} 
+            onChange={e => setOrg2(e.target.value)} 
+          >
+            <option value="">Select Student (Optional)</option>
+            {filteredStudents2.map(u => (
+              <option key={u.id} value={u.roll_number || u.username}>
+                {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'})
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="input-group">
-          <label>Organizer 2 Roll Number (Optional)</label>
-          <input type="text" className="input" value={org2} onChange={e => setOrg2(e.target.value)} placeholder="Enter roll number" />
-        </div>
-
-        <div className="input-group">
-          <label>Organizer 3 Roll Number (Optional)</label>
-          <input type="text" className="input" value={org3} onChange={e => setOrg3(e.target.value)} placeholder="Enter roll number" />
+          <label>Organizer 3 (Optional)</label>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <select 
+              className="select" 
+              value={org3Year} 
+              onChange={e => {
+                setOrg3Year(e.target.value);
+                setOrg3('');
+              }}
+              style={{ flex: 1, padding: '0.5rem' }}
+            >
+              <option value="">All Years</option>
+              <option value="1st Year">1st Year</option>
+              <option value="2nd Year">2nd Year</option>
+            </select>
+            <select 
+              className="select" 
+              value={org3Section} 
+              onChange={e => {
+                setOrg3Section(e.target.value);
+                setOrg3('');
+              }}
+              style={{ flex: 1, padding: '0.5rem' }}
+            >
+              <option value="">All Sections</option>
+              <option value="A">Sec A</option>
+              <option value="B">Sec B</option>
+              <option value="C">Sec C</option>
+              <option value="D">Sec D</option>
+            </select>
+          </div>
+          <select 
+            className="select" 
+            value={org3} 
+            onChange={e => setOrg3(e.target.value)} 
+          >
+            <option value="">Select Student (Optional)</option>
+            {filteredStudents3.map(u => (
+              <option key={u.id} value={u.roll_number || u.username}>
+                {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'})
+              </option>
+            ))}
+          </select>
         </div>
 
         <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '1rem' }}>Submit Form</button>

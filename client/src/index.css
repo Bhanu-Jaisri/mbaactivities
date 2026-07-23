@@ -15,9 +15,60 @@
   --surface-border: rgba(111, 225, 220, 0.2);
   --text: #F8FAFC;
   --text-muted: #94A3B8;
-  --input-bg: rgba(15, 23, 42, 0.6);
+  --input-bg: #0b0f19;
   --glass-shadow: 0 8px 32px 0 rgba(45, 159, 154, 0.2);
   --glass-blur: blur(12px);
+  --gradient-bg: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #1F6B68 100%);
+  --heading-color: #ffffff;
+  --btn-secondary-hover: rgba(111, 225, 220, 0.1);
+  --logo-gradient: linear-gradient(to right, #9EEBE8, #6FE1DC);
+  --badge-pending-bg: rgba(245, 158, 11, 0.2);
+  --badge-pending-text: #FCD34D;
+  --badge-approved-bg: rgba(61, 214, 208, 0.2);
+  --badge-approved-text: var(--teal-light);
+  --badge-rejected-bg: rgba(239, 68, 68, 0.2);
+  --badge-rejected-text: #FCA5A5;
+  --badge-admin-bg: rgba(6, 182, 212, 0.2);
+  --badge-admin-text: #67E8F9;
+  --badge-staff-bg: rgba(14, 165, 233, 0.2);
+  --badge-staff-text: #BAE6FD;
+  --badge-student-bg: rgba(79, 70, 229, 0.2);
+  --badge-student-text: #C4B5FD;
+}
+
+[data-theme="light"] {
+  --primary: #4F46E5;
+  --primary-hover: #4338CA;
+  --secondary: #0891B2;
+  --cyan: #0891B2;
+  --teal-light: #0d9488;
+  --teal-main: #0f766e;
+  --teal-dark: #115e59;
+  --danger: #EF4444;
+  --danger-hover: #DC2626;
+  --background: #f8fafc;
+  --surface: rgba(255, 255, 255, 0.75);
+  --surface-border: rgba(15, 118, 110, 0.15);
+  --text: #0f172a;
+  --text-muted: #475569;
+  --input-bg: #ffffff;
+  --glass-shadow: 0 8px 32px 0 rgba(15, 118, 110, 0.08);
+  --gradient-bg: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 50%, #ccfbf1 100%);
+  --heading-color: #0f172a;
+  --btn-secondary-hover: rgba(15, 118, 110, 0.08);
+  --logo-gradient: linear-gradient(to right, #0d9488, #0891B2);
+  --badge-pending-bg: rgba(245, 158, 11, 0.15);
+  --badge-pending-text: #D97706;
+  --badge-approved-bg: rgba(13, 148, 136, 0.15);
+  --badge-approved-text: #0D9488;
+  --badge-rejected-bg: rgba(220, 38, 38, 0.15);
+  --badge-rejected-text: #DC2626;
+  --badge-admin-bg: rgba(8, 145, 178, 0.15);
+  --badge-admin-text: #0891B2;
+  --badge-staff-bg: rgba(2, 132, 199, 0.15);
+  --badge-staff-text: #0284C7;
+  --badge-student-bg: rgba(79, 70, 229, 0.15);
+  --badge-student-text: #4F46E5;
 }
 
 * {
@@ -26,13 +77,22 @@
   padding: 0;
 }
 
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
 body {
   font-family: 'Inter', sans-serif;
   background: var(--background);
   color: var(--text);
   min-height: 100vh;
-  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #1F6B68 100%);
+  background: var(--gradient-bg);
   overflow-x: hidden;
+}
+
+body, .glass-panel, .card, .btn, .input, .select, .textarea, th, td, h1, h2, h3, h4, p, span, tr {
+  transition: background 0.25s ease, background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
 }
 
 /* Glassmorphic Container */
@@ -49,7 +109,7 @@ body {
 /* Typography */
 h1, h2, h3, h4 {
   font-weight: 600;
-  color: #fff;
+  color: var(--heading-color);
   margin-bottom: 1rem;
 }
 
@@ -79,6 +139,8 @@ p {
   border: none;
   gap: 0.5rem;
   font-size: 0.95rem;
+  color: var(--text);
+  text-decoration: none;
 }
 
 .btn-primary {
@@ -127,19 +189,47 @@ p {
 }
 
 .input, .select, .textarea {
-  background: var(--input-bg);
+  background-color: var(--input-bg);
   border: 1px solid var(--surface-border);
   border-radius: 8px;
   padding: 0.75rem 1rem;
   color: var(--text);
   font-family: inherit;
-  transition: all 0.2s;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   outline: none;
 }
 
 .input:focus, .select:focus, .textarea:focus {
   border-color: var(--teal-light);
   box-shadow: 0 0 0 2px rgba(61, 214, 208, 0.2);
+  background-color: var(--input-bg);
+}
+
+/* Dropdown Option Elements Styling */
+select option {
+  background-color: var(--input-bg);
+  color: var(--text);
+}
+
+/* Input Placeholder Styling */
+.input::placeholder, .textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Browser Autofill Overrides */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text) !important;
+  -webkit-box-shadow: 0 0 0px 1000px var(--input-bg) inset !important;
+  transition: background-color 5000s ease-in-out 0s;
 }
 
 .textarea {
@@ -221,33 +311,33 @@ th {
 }
 
 .badge-Pending {
-  background: rgba(245, 158, 11, 0.2);
-  color: #FCD34D;
+  background: var(--badge-pending-bg);
+  color: var(--badge-pending-text);
 }
 
 .badge-Approved {
-  background: rgba(61, 214, 208, 0.2);
-  color: var(--teal-light);
+  background: var(--badge-approved-bg);
+  color: var(--badge-approved-text);
 }
 
 .badge-Rejected {
-  background: rgba(239, 68, 68, 0.2);
-  color: #FCA5A5;
+  background: var(--badge-rejected-bg);
+  color: var(--badge-rejected-text);
 }
 
 .badge-Admin {
-  background: rgba(6, 182, 212, 0.2);
-  color: #67E8F9;
+  background: var(--badge-admin-bg);
+  color: var(--badge-admin-text);
 }
 
 .badge-Staff {
-  background: rgba(14, 165, 233, 0.2);
-  color: #BAE6FD;
+  background: var(--badge-staff-bg);
+  color: var(--badge-staff-text);
 }
 
 .badge-Student {
-  background: rgba(79, 70, 229, 0.2);
-  color: #C4B5FD;
+  background: var(--badge-student-bg);
+  color: var(--badge-student-text);
 }
 
 /* Auth Layout */

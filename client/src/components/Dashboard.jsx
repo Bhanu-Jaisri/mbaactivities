@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../AuthContext';
-import { LogOut, Users, FileText, PlusCircle } from 'lucide-react';
+import { useTheme } from '../ThemeContext';
+import { LogOut, Users, FileText, PlusCircle, Sun, Moon } from 'lucide-react';
 import UserManagement from './UserManagement';
 import FormCreation from './FormCreation';
 import FormDetails from './FormDetails';
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
   const canManageUsers = user.role === 'Admin' || user.role === 'Staff';
@@ -32,9 +34,6 @@ const Dashboard = () => {
     <div>
       <nav className="nav-bar glass-panel" style={{ borderRadius: '0', borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}>
         <div className="nav-container">
-          <h2 style={{ margin: 0, background: 'linear-gradient(to right, #9EEBE8, #6FE1DC)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            Amirtha
-          </h2>
           <div className="nav-links">
             <Link to="/" className={`btn ${location.pathname === '/' ? 'btn-secondary' : ''}`} style={{ border: 'none' }}>
               <FileText size={18} /> Forms
@@ -52,6 +51,20 @@ const Dashboard = () => {
           </div>
         </div>
         <div className="nav-user">
+          <button 
+            onClick={toggleTheme} 
+            className="btn" 
+            style={{ 
+              padding: '0.5rem', 
+              background: 'rgba(255, 255, 255, 0.05)', 
+              color: 'var(--text)',
+              border: '1px solid var(--surface-border)',
+              borderRadius: '8px'
+            }}
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontWeight: '600' }}>{user.username}</div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>

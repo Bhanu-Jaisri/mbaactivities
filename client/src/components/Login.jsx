@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../AuthContext';
-import { Lock, User } from 'lucide-react';
+import { useTheme } from '../ThemeContext';
+import { Lock, User, Sun, Moon } from 'lucide-react';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -8,6 +9,7 @@ const Login = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -24,8 +26,26 @@ const Login = () => {
 
   return (
     <div className="auth-container">
+      <button 
+        onClick={toggleTheme} 
+        className="btn" 
+        style={{ 
+          position: 'absolute', 
+          top: '1rem', 
+          right: '1rem', 
+          padding: '0.5rem', 
+          background: 'rgba(255, 255, 255, 0.05)', 
+          color: 'var(--text)',
+          border: '1px solid var(--surface-border)',
+          borderRadius: '8px',
+          cursor: 'pointer'
+        }}
+        title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+      >
+        {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+      </button>
       <div className="auth-box glass-panel">
-        <h1 style={{ textAlign: 'center', marginBottom: '2rem' }}>Amirtha</h1>
+        <h1 style={{ textAlign: 'center', marginBottom: '2rem', background: 'var(--logo-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Amirtha</h1>
         <h2 style={{ textAlign: 'center', fontSize: '1.25rem', color: 'var(--text-muted)' }}>Event Form Management</h2>
         
         {error && (

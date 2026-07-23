@@ -339,7 +339,8 @@ const FormDetails = () => {
         <div key={form.id} className={`card ${printClass}`}>
           {/* Print Layout */}
           <div className="print-only">
-            <h1 style={{ textAlign: 'center', fontSize: '24pt', textDecoration: 'underline', marginBottom: '3rem', color: 'black', background: 'none', WebkitTextFillColor: 'black' }}>MBA Students Activities</h1>
+            <h1 style={{ textAlign: 'center', fontSize: '24pt', fontWeight: 'bold', margin: '0 0 0.5rem 0', color: 'black', background: 'none', WebkitTextFillColor: 'black' }}>Mepco Schlenk Engineering College</h1>
+            <h2 style={{ textAlign: 'center', fontSize: '18pt', fontWeight: 'bold', textDecoration: 'underline', marginBottom: '3rem', color: 'black', background: 'none', WebkitTextFillColor: 'black' }}>MBA Students Activities</h2>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', fontSize: '14pt', color: 'black' }}>
               <div><strong>Event Name:</strong> {form.event_name}</div>
