@@ -284,20 +284,40 @@ app.post('/api/forms', authenticateToken, authorizeSubRole('Secretary'), async (
 app.delete('/api/forms/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
-    const formCheck = await db.query('SELECT created_by, status FROM event_forms WHERE id = $1', [id]);
+    const formCheck = await db.query('SELECT created_by, status, is_completed, ppt_filename FROM event_forms WHERE id = $1', [id]);
     if (formCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Form not found' });
     }
     
     const form = formCheck.rows[0];
-    if (form.status === 'Approved') {
-      return res.status(400).json({ error: 'Cannot delete an approved event form' });
-    }
-    const isCreatorSecretary = (req.user.role === 'Student' && req.user.sub_role === 'Secretary' && form.created_by === req.user.id);
     const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
     
-    if (!isCreatorSecretary && !isStaffOrAdmin) {
-      return res.status(403).json({ error: 'Only the creator Secretary or Staff/Admin can delete this form' });
+    if (form.is_completed) {
+      // Completed forms can only be deleted by Staff or Admin
+      if (!isStaffOrAdmin) {
+        return res.status(403).json({ error: 'Only Staff/Admin can delete completed forms' });
+      }
+    } else {
+      // For active non-completed forms, approved forms cannot be deleted
+      if (form.status === 'Approved') {
+        return res.status(400).json({ error: 'Cannot delete an approved active event form' });
+      }
+      const isCreatorSecretary = (req.user.role === 'Student' && req.user.sub_role === 'Secretary' && form.created_by === req.user.id);
+      if (!isCreatorSecretary && !isStaffOrAdmin) {
+        return res.status(403).json({ error: 'Only the creator Secretary or Staff/Admin can delete this form' });
+      }
+    }
+
+    // Clean up associated PPT file if exists
+    if (form.ppt_filename) {
+      const filePath = path.join(__dirname, 'uploads', form.ppt_filename);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (e) {
+          console.error(`Failed to delete PPT file on form deletion:`, e);
+        }
+      }
     }
 
     await db.query('DELETE FROM event_forms WHERE id = $1', [id]);
@@ -552,14 +572,11 @@ app.put('/api/forms/:id/complete', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Only approved event forms can be marked as completed' });
     }
 
-    // Check authorization: Admin, Staff, or authorized Student (creator, organizer, Secretary, or Executive)
-    const isStaffOrAdmin = req.user.role === 'Admin' || req.user.role === 'Staff';
-    const isCreator = form.created_by === req.user.id;
-    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
+    // Check authorization: must be Student and sub_role is Secretary or Executive
     const isSecOrExec = req.user.role === 'Student' && ['Secretary', 'Executive'].includes(req.user.sub_role);
 
-    if (!isStaffOrAdmin && !isCreator && !isOrganizer && !isSecOrExec) {
-      return res.status(403).json({ error: 'You are not authorized to change the completion status of this event' });
+    if (!isSecOrExec) {
+      return res.status(403).json({ error: 'Only student Secretary or Executive can change the completion status of this event' });
     }
 
     const result = await db.query(
@@ -600,42 +617,6 @@ app.put('/api/forms/:id/resubmit', authenticateToken, async (req, res) => {
   }
 });
 
-// Auto-delete completed event forms older than 2 months (60 days)
-async function cleanOldCompletedForms() {
-  try {
-    // 1. Fetch form ids and associated PPT files older than 2 months
-    const oldForms = await db.query(
-      "SELECT id, ppt_filename FROM event_forms WHERE is_completed = true AND completed_at < NOW() - INTERVAL '2 months'"
-    );
-
-    if (oldForms.rows.length > 0) {
-      // 2. Delete PPT files from disk
-      for (const form of oldForms.rows) {
-        if (form.ppt_filename) {
-          const filePath = path.join(__dirname, 'uploads', form.ppt_filename);
-          if (fs.existsSync(filePath)) {
-            try {
-              fs.unlinkSync(filePath);
-            } catch (e) {
-              console.error(`Failed to delete PPT file for auto-deleted form ${form.id}:`, e);
-            }
-          }
-        }
-      }
-
-      // 3. Delete from database
-      const formIds = oldForms.rows.map(f => f.id);
-      await db.query("DELETE FROM event_forms WHERE id = ANY($1)", [formIds]);
-      console.log(`Auto-deleted completed forms older than 2 months: ${formIds.join(', ')}`);
-    }
-  } catch (err) {
-    console.error('Failed to auto-delete old completed forms:', err);
-  }
-}
-
-// Run cleanup check immediately on startup, and then every 12 hours
-cleanOldCompletedForms();
-setInterval(cleanOldCompletedForms, 12 * 60 * 60 * 1000);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

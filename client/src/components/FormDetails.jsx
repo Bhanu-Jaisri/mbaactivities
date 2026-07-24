@@ -13,10 +13,13 @@ const FormDetails = () => {
   // Edit State
   const [editingRounds, setEditingRounds] = useState(null);
   const [roundsData, setRoundsData] = useState({ round_1: '', round_2: '', round_3: '' });
+  const [viewingForm, setViewingForm] = useState(null);
   
   const [editingParticipants, setEditingParticipants] = useState(null);
   const [selectedParticipants, setSelectedParticipants] = useState([]);
   const [participantInput, setParticipantInput] = useState('');
+  const [partYear, setPartYear] = useState('');
+  const [partSection, setPartSection] = useState('');
 
   // Rejection/Resubmit State
   const [rejectingFormId, setRejectingFormId] = useState(null);
@@ -27,24 +30,9 @@ const FormDetails = () => {
 
   const canCompleteForm = (form) => {
     if (form.status !== 'Approved') return false;
-    if (user.role === 'Admin' || user.role === 'Staff') return true;
-    if (user.role === 'Student') {
-      const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(user.id);
-      const isCreator = form.created_by === user.id;
-      const isSecOrExec = ['Secretary', 'Executive'].includes(user.sub_role);
-      return isOrganizer || isCreator || isSecOrExec;
-    }
-    return false;
+    return user.role === 'Student' && ['Secretary', 'Executive'].includes(user.sub_role);
   };
 
-  const getAutoDeleteDays = (completedAt) => {
-    if (!completedAt) return null;
-    const completedDate = new Date(completedAt);
-    const deleteDate = new Date(completedDate.getTime() + 60 * 24 * 60 * 60 * 1000); // 60 days
-    const timeDiff = deleteDate.getTime() - new Date().getTime();
-    const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
-    return daysDiff > 0 ? daysDiff : 0;
-  };
 
   const handleCompleteChange = async (formId, isCompleted) => {
     const actionText = isCompleted ? 'mark this event as completed' : 'reopen this event';
@@ -180,6 +168,9 @@ const FormDetails = () => {
   const startEditingParticipants = (form) => {
     setEditingParticipants(form.id);
     setSelectedParticipants(form.participants.map(p => p.id.toString()));
+    setPartYear('');
+    setPartSection('');
+    setParticipantInput('');
   };
 
   const toggleParticipant = (userId) => {
@@ -239,17 +230,16 @@ const FormDetails = () => {
 
   const handlePrint = (formId) => {
     setPrintingFormId(formId);
-    // ensure the form is expanded before printing
-    if (!expandedForms.includes(formId)) {
-      setExpandedForms(prev => [...prev, formId]);
-    }
     setTimeout(() => {
       window.print();
       setPrintingFormId(null);
-    }, 100);
+    }, 150);
   };
 
   const canDeleteForm = (form) => {
+    if (form.is_completed) {
+      return user.role === 'Staff' || user.role === 'Admin';
+    }
     if (form.status === 'Approved') return false;
     if (user.role === 'Admin') return true;
     if (user.role === 'Student' && user.sub_role === 'Secretary' && form.created_by === user.id) return true;
@@ -270,6 +260,11 @@ const FormDetails = () => {
     // 1. Tab check
     const matchesTab = activeTab === 'completed' ? form.is_completed : !form.is_completed;
     if (!matchesTab) return false;
+
+    // Restrict access to completed forms to Staff/Admin only
+    if (activeTab === 'completed' && user.role !== 'Staff' && user.role !== 'Admin') {
+      return false;
+    }
 
     // 2. Date check
     if (filterDate) {
@@ -307,13 +302,15 @@ const FormDetails = () => {
           >
             Active Forms
           </button>
-          <button 
-            onClick={() => setActiveTab('completed')} 
-            className={`btn ${activeTab === 'completed' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ padding: '0.5rem 1.25rem', fontSize: '0.9rem' }}
-          >
-            Completed Folder
-          </button>
+          {(user.role === 'Staff' || user.role === 'Admin') && (
+            <button 
+              onClick={() => setActiveTab('completed')} 
+              className={`btn ${activeTab === 'completed' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '0.5rem 1.25rem', fontSize: '0.9rem' }}
+            >
+              Completed Folder
+            </button>
+          )}
         </div>
 
         {/* Date Filter Input */}
@@ -340,396 +337,589 @@ const FormDetails = () => {
         </div>
       </div>
 
-      <div className="grid print-container">
-        {filteredForms.map(form => {
-        const isExpanded = expandedForms.includes(form.id);
-        const printClass = printingFormId ? (printingFormId === form.id ? 'print-target' : 'no-print') : '';
-        return (
-        <div key={form.id} className={`card ${printClass}`}>
-          {/* Print Layout */}
-          <div className="print-only">
-            <h1 style={{ textAlign: 'center', fontSize: '24pt', fontWeight: 'bold', margin: '0 0 0.5rem 0', color: 'black', background: 'none', WebkitTextFillColor: 'black' }}>Mepco Schlenk Engineering College</h1>
-            <h2 style={{ textAlign: 'center', fontSize: '18pt', fontWeight: 'bold', textDecoration: 'underline', marginBottom: '3rem', color: 'black', background: 'none', WebkitTextFillColor: 'black' }}>MBA Students Activities</h2>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', fontSize: '14pt', color: 'black' }}>
-              <div><strong>Event Name:</strong> {form.event_name}</div>
-              <div><strong>Date:</strong> {new Date(form.created_at).toLocaleDateString()}</div>
-            </div>
+      {activeTab === 'completed' ? (
+        <div className="table-container glass-panel hide-on-print" style={{ padding: '1.5rem', marginTop: '1rem' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--surface-border)' }}>
+                <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Event Name</th>
+                <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Created By</th>
+                <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Approved By</th>
+                <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Date</th>
+                <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Approved Status</th>
+                <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Completed Status</th>
+                <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'center' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredForms.map(form => (
+                <tr key={form.id} style={{ borderBottom: '1px solid var(--surface-border)' }}>
+                  <td style={{ padding: '1rem', fontWeight: 500 }}>{form.event_name}</td>
+                  <td style={{ padding: '1rem' }}>{form.created_by_name}</td>
+                  <td style={{ padding: '1rem' }}>{form.approved_by_name || 'N/A'}</td>
+                  <td style={{ padding: '1rem' }}>{new Date(form.created_at).toLocaleDateString()}</td>
+                  <td style={{ padding: '1rem' }}>
+                    <span className={`badge badge-${form.status}`}>{form.status}</span>
+                  </td>
+                  <td style={{ padding: '1rem' }}>
+                    <span className="badge badge-Approved" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34D399' }}>
+                      Completed
+                    </span>
+                  </td>
+                  <td style={{ padding: '1rem', textAlign: 'center' }}>
+                    <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handlePrint(form.id)}>
+                        Print
+                      </button>
+                      <button className="btn btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', background: 'var(--secondary)' }} onClick={() => setViewingForm(form)}>
+                        View
+                      </button>
+                      {canDeleteForm(form) && (
+                        <button className="btn btn-danger" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handleDeleteForm(form.id)}>
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filteredForms.length === 0 && (
+                <tr>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                    No completed events found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="grid print-container hide-on-print">
+          {filteredForms.map(form => {
+            const isExpanded = expandedForms.includes(form.id);
+            return (
+              <div key={form.id} className="card">
+                {/* Web Layout */}
+                <div>
+                  <div className="card-header-flex" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                    <h3 style={{ margin: 0 }}>{form.event_name}</h3>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      {form.status === 'Approved' && (
+                        <button className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', border: 'none' }} onClick={() => handlePrint(form.id)}>
+                          <Printer size={16} /> Print
+                        </button>
+                      )}
+                      {canDeleteForm(form) && (
+                        <button className="btn btn-danger" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }} onClick={() => handleDeleteForm(form.id)}>
+                          <Trash2 size={14} /> Delete
+                        </button>
+                      )}
+                      <span className={`badge badge-${form.status}`}>{form.status}</span>
+                      {form.is_completed && (
+                        <span className="badge badge-Approved" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34D399', marginLeft: '0.5rem' }}>
+                          Completed
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-muted)' }}>
+                    <p><strong>Created By:</strong> {form.created_by_name}</p>
+                    <p><strong>Date:</strong> {new Date(form.created_at).toLocaleDateString()}</p>
+                  </div>
 
-            <div style={{ marginBottom: '2rem', fontSize: '14pt', color: 'black' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                <div><strong>Organizer 1:</strong> {form.org1_name}</div>
-                <div><strong>Organizer 2:</strong> {form.org2_name || 'N/A'}</div>
-              </div>
-              <div><strong>Organizer 3:</strong> {form.org3_name || 'N/A'}</div>
-            </div>
+                  <button 
+                    className="btn btn-secondary" 
+                    style={{ width: '100%', marginBottom: isExpanded ? '1rem' : '0' }} 
+                    onClick={() => toggleExpand(form.id)}
+                  >
+                    {isExpanded ? 'Hide Details' : 'View Details'}
+                  </button>
 
-            <div style={{ marginBottom: '2rem', fontSize: '14pt', color: 'black' }}>
-              <strong>Decision Status:</strong> {form.status}
-              {form.approved_by_name && ` (by ${form.approved_by_name}, Section ${form.approved_by_section || 'N/A'})`}
-              {form.status === 'Rejected' && form.rejection_queries && ` - Queries: ${form.rejection_queries}`}
-            </div>
+                  {isExpanded && (
+                    <>
+                      <div style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-muted)' }}>
+                        <p><strong>Organizers:</strong> {form.org1_name} {form.org2_name ? `, ${form.org2_name}` : ''} {form.org3_name ? `, ${form.org3_name}` : ''}</p>
+                        {form.status === 'Approved' && form.approved_by_name && (
+                          <p style={{ color: '#34D399', fontWeight: 500 }}>
+                            ✓ Approved by {form.approved_by_name} (Section {form.approved_by_section || 'N/A'})
+                          </p>
+                        )}
+                        {form.status === 'Rejected' && form.approved_by_name && (
+                          <div style={{ background: 'rgba(239, 68, 68, 0.1)', padding: '0.75rem', borderRadius: '8px', marginTop: '0.5rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                            <p style={{ color: '#F87171', fontWeight: 500, margin: 0 }}>
+                              ✗ Rejected by {form.approved_by_name} (Section {form.approved_by_section || 'N/A'})
+                            </p>
+                            {form.rejection_queries && (
+                              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                <strong>Queries:</strong> {form.rejection_queries}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
 
-            <div style={{ fontSize: '14pt', color: 'black', marginBottom: '2rem' }}>
-              <strong>Participants:</strong>
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '1rem', border: '1px solid black' }}>
-                <thead>
-                  <tr>
-                    <th style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'left', width: '10%' }}>S.No</th>
-                    <th style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'left', width: '90%' }}>Name</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {form.participants.map((p, index) => (
-                    <tr key={p.id}>
-                      <td style={{ border: '1px solid black', padding: '0.5rem' }}>{index + 1}</td>
-                      <td style={{ border: '1px solid black', padding: '0.5rem' }}>{p.username}</td>
-                    </tr>
-                  ))}
-                  {form.participants.length === 0 && (
-                    <tr>
-                      <td colSpan="2" style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'center' }}>No participants</td>
-                    </tr>
+                      <hr style={{ borderColor: 'var(--surface-border)', margin: '1rem 0' }} />
+
+                      {/* Participants Section */}
+                      <div style={{ marginBottom: '1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <h4 style={{ margin: 0, fontSize: '1rem' }}><Users size={16} style={{ verticalAlign: 'middle' }}/> Participants</h4>
+                          {user.sub_role === 'Executive' && editingParticipants !== form.id && form.status !== 'Approved' && (
+                            <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingParticipants(form)}>
+                              <Edit3 size={14} /> Edit
+                            </button>
+                          )}
+                        </div>
+                        
+                        {editingParticipants === form.id ? (
+                          <div style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                              <select 
+                                className="select" 
+                                value={partYear} 
+                                onChange={e => {
+                                  setPartYear(e.target.value);
+                                  setParticipantInput('');
+                                }}
+                                style={{ flex: 1, padding: '0.5rem' }}
+                              >
+                                <option value="">All Years</option>
+                                <option value="1st Year">1st Year</option>
+                                <option value="2nd Year">2nd Year</option>
+                              </select>
+                              <select 
+                                className="select" 
+                                value={partSection} 
+                                onChange={e => {
+                                  setPartSection(e.target.value);
+                                  setParticipantInput('');
+                                }}
+                                style={{ flex: 1, padding: '0.5rem' }}
+                              >
+                                <option value="">All Sections</option>
+                                <option value="A">Sec A</option>
+                                <option value="B">Sec B</option>
+                                <option value="C">Sec C</option>
+                                <option value="D">Sec D</option>
+                              </select>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                              <select 
+                                className="select" 
+                                value={participantInput} 
+                                onChange={(e) => setParticipantInput(e.target.value)}
+                                style={{ flex: 1, padding: '0.5rem' }}
+                              >
+                                <option value="">Select Student</option>
+                                {users
+                                  .filter(u => {
+                                    if (partYear && u.year !== partYear) return false;
+                                    if (partSection && u.section !== partSection) return false;
+                                    return true;
+                                  })
+                                  .map(u => (
+                                    <option key={u.id} value={u.roll_number || u.username}>
+                                      {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'})
+                                    </option>
+                                  ))
+                                }
+                              </select>
+                              <button className="btn btn-primary" onClick={addParticipantByRoll}>Add</button>
+                            </div>
+                            <div style={{ maxHeight: '150px', overflowY: 'auto', marginBottom: '1rem' }}>
+                              {selectedParticipants.map(idStr => {
+                                const u = users.find(user => user.id.toString() === idStr);
+                                return u ? (
+                                  <div key={idStr} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '4px' }}>
+                                    <span>{u.username} ({u.roll_number || 'No Roll #'})</span>
+                                    <button className="btn btn-danger" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => toggleParticipant(u.id)}>Remove</button>
+                                  </div>
+                                ) : null;
+                              })}
+                              {selectedParticipants.length === 0 && <span style={{ color: 'var(--text-muted)' }}>No participants added yet.</span>}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button className="btn btn-primary" onClick={() => saveParticipants(form.id)}>Save</button>
+                              <button className="btn btn-secondary" onClick={() => { setEditingParticipants(null); setParticipantInput(''); setPartYear(''); setPartSection(''); }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: '0.85rem' }}>
+                            {form.participants.length > 0 
+                              ? form.participants.map(p => p.username).join(', ') 
+                              : 'No participants assigned'}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Rounds Section */}
+                      <div style={{ marginBottom: '1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <h4 style={{ margin: 0, fontSize: '1rem' }}>Rounds</h4>
+                          {isOrganizer(form) && editingRounds !== form.id && form.status !== 'Approved' && (
+                            <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingRounds(form)}>
+                              <Edit3 size={14} /> Edit
+                            </button>
+                          )}
+                        </div>
+
+                        {editingRounds === form.id ? (
+                          <div style={{ marginTop: '0.5rem' }}>
+                            <textarea className="textarea" placeholder="Round 1 Details" value={roundsData.round_1} onChange={e => setRoundsData({...roundsData, round_1: e.target.value})} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '60px' }} />
+                            <textarea className="textarea" placeholder="Round 2 Details" value={roundsData.round_2} onChange={e => setRoundsData({...roundsData, round_2: e.target.value})} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '60px' }} />
+                            <textarea className="textarea" placeholder="Round 3 Details" value={roundsData.round_3} onChange={e => setRoundsData({...roundsData, round_3: e.target.value})} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '60px' }} />
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button className="btn btn-primary" onClick={() => saveRounds(form.id)}>Save</button>
+                              <button className="btn btn-secondary" onClick={() => setEditingRounds(null)}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '0.85rem', background: 'rgba(0,0,0,0.1)', padding: '0.75rem', borderRadius: '8px' }}>
+                            <p><strong>R1:</strong> {form.round_1_details || 'N/A'}</p>
+                            <p><strong>R2:</strong> {form.round_2_details || 'N/A'}</p>
+                            <p><strong>R3:</strong> {form.round_3_details || 'N/A'}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Presentation (PPT) Section */}
+                      <div style={{ marginBottom: '1rem' }}>
+                        <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>Presentation (PPT)</h4>
+                        {form.ppt_filename ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.5rem 0', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
+                            <span style={{ fontSize: '0.85rem', flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                              📄 {form.ppt_original_name || form.ppt_filename}
+                            </span>
+                            <a
+                              href={getPptUrl(form.ppt_filename)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              download={form.ppt_original_name || 'presentation.pptx'}
+                              className="btn btn-secondary"
+                              style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none', display: 'inline-block' }}
+                            >
+                              Download
+                            </a>
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.5rem 0' }}>No PPT uploaded yet.</p>
+                        )}
+
+                        {isOrganizer(form) && form.status !== 'Approved' && (
+                          <div style={{ marginTop: '0.5rem' }}>
+                            <input
+                              type="file"
+                              accept=".ppt,.pptx"
+                              style={{ display: 'none' }}
+                              id={`ppt-file-input-${form.id}`}
+                              onChange={(e) => handlePptUpload(form.id, e.target.files[0])}
+                              disabled={uploadingFormId === form.id}
+                            />
+                            <label
+                              htmlFor={`ppt-file-input-${form.id}`}
+                              className="btn btn-primary"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.8rem', fontSize: '0.8rem', cursor: 'pointer' }}
+                            >
+                              {uploadingFormId === form.id 
+                                ? 'Uploading...' 
+                                : form.ppt_filename 
+                                  ? 'Change PPT' 
+                                  : 'Upload PPT'}
+                            </label>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Approval Actions (Secretary/Executive Student only) */}
+                      {user.role === 'Student' && ['Secretary', 'Executive'].includes(user.sub_role) && form.status === 'Pending' && (
+                        (!isFormComplete(form) || editingParticipants === form.id) ? (
+                          <div style={{ marginTop: '1rem', background: 'rgba(245, 158, 11, 0.1)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '0.85rem', color: '#F59E0B' }}>
+                            ⚠ All details (Event Name, Round 1 details, PPT file, and saved Participants) must be completed before you can Approve or Reject.
+                          </div>
+                        ) : rejectingFormId === form.id ? (
+                          <div style={{ marginTop: '1rem', background: 'rgba(239, 68, 68, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: 500 }}>Rejection Queries / Reasons</label>
+                            <textarea
+                              className="textarea"
+                              placeholder="Enter details of why this form is being rejected..."
+                              value={rejectionQueries}
+                              onChange={(e) => setRejectionQueries(e.target.value)}
+                              style={{ width: '100%', marginBottom: '0.5rem', minHeight: '80px' }}
+                              required
+                            />
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button className="btn btn-danger" onClick={() => submitRejection(form.id)}>Submit Rejection</button>
+                              <button className="btn btn-secondary" onClick={() => setRejectingFormId(null)}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                            <button className="btn btn-primary" style={{ flex: 1, background: 'var(--secondary)' }} onClick={() => handleStatusChange(form.id, 'Approved')}>
+                              <CheckCircle size={16} /> Approve
+                            </button>
+                            <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { setRejectingFormId(form.id); setRejectionQueries(''); }}>
+                              <XCircle size={16} /> Reject
+                            </button>
+                          </div>
+                        )
+                      )}
+
+                      {/* Organizer Resubmit Action */}
+                      {isOrganizer(form) && form.status === 'Rejected' && (
+                        <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                          <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: '#60A5FA', fontWeight: 500 }}>
+                            Form has rejection queries. Edit rounds or PPT above, then click below to resubmit.
+                          </p>
+                          <button
+                            className="btn btn-primary"
+                            style={{ width: '100%', background: '#3B82F6' }}
+                            onClick={() => handleResubmit(form.id)}
+                          >
+                            Resubmit Form
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Completion Section for Approved Active Events */}
+                      {form.status === 'Approved' && !form.is_completed && canCompleteForm(form) && (
+                        <div style={{ 
+                          marginTop: '1.5rem', 
+                          background: 'rgba(99, 102, 241, 0.1)', 
+                          padding: '1rem', 
+                          borderRadius: '8px', 
+                          border: '1px solid rgba(99, 102, 241, 0.2)',
+                          textAlign: 'center'
+                        }}>
+                          <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: '#818CF8', fontWeight: 500 }}>
+                            Is this event completed?
+                          </p>
+                          <button 
+                            className="btn btn-primary" 
+                            style={{ width: '100%', background: 'var(--primary)' }}
+                            onClick={() => handleCompleteChange(form.id, true)}
+                          >
+                            Mark as Completed
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ fontSize: '14pt', color: 'black', marginBottom: '2rem' }}>
-              <strong>Rounds:</strong>
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '1rem', border: '1px solid black' }}>
-                <thead>
-                  <tr>
-                    <th style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'left', width: '33.33%' }}>Round 1</th>
-                    <th style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'left', width: '33.33%' }}>Round 2</th>
-                    <th style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'left', width: '33.33%' }}>Round 3</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top' }}>{form.round_1_details || 'N/A'}</td>
-                    <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top' }}>{form.round_2_details || 'N/A'}</td>
-                    <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top' }}>{form.round_3_details || 'N/A'}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {form.ppt_original_name && (
-              <div style={{ fontSize: '14pt', color: 'black', marginBottom: '2rem' }}>
-                <strong>Presentation (PPT):</strong> {form.ppt_original_name}
+                </div>
               </div>
-            )}
+            );
+          })}
+          {filteredForms.length === 0 && (
+            <p style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-muted)', padding: '2rem 0' }}>
+              No active event forms found.
+            </p>
+          )}
+        </div>
+      )}
 
-            </div>
+      {/* Hidden Print Container for all forms */}
+      <div className="print-only grid print-container">
+        {forms.map(form => {
+          const printClass = printingFormId === form.id ? 'print-target' : 'no-print';
+          return (
+            <div key={`print-${form.id}`} className={`card ${printClass}`}>
+              <div className="print-only">
+                <h1 style={{ textAlign: 'center', fontSize: '24pt', fontWeight: 'bold', margin: '0 0 0.5rem 0', color: 'black', background: 'none', WebkitTextFillColor: 'black' }}>Mepco Schlenk Engineering College</h1>
+                <h2 style={{ textAlign: 'center', fontSize: '18pt', fontWeight: 'bold', textDecoration: 'underline', marginBottom: '3rem', color: 'black', background: 'none', WebkitTextFillColor: 'black' }}>MBA Students Activities</h2>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', fontSize: '14pt', color: 'black' }}>
+                  <div><strong>Event Name:</strong> {form.event_name}</div>
+                  <div><strong>Date:</strong> {new Date(form.created_at).toLocaleDateString()}</div>
+                </div>
 
+                <div style={{ marginBottom: '2rem', fontSize: '14pt', color: 'black' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                    <div><strong>Organizer 1:</strong> {form.org1_name}</div>
+                    <div><strong>Organizer 2:</strong> {form.org2_name || 'N/A'}</div>
+                  </div>
+                  <div><strong>Organizer 3:</strong> {form.org3_name || 'N/A'}</div>
+                </div>
 
-          {/* Web Layout */}
-          <div className="hide-on-print">
-            <div className="card-header-flex" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-            <h3 style={{ margin: 0 }}>{form.event_name}</h3>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              {form.status === 'Approved' && (
-                <button className="btn btn-secondary hide-on-print" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', border: 'none' }} onClick={() => handlePrint(form.id)}>
-                  <Printer size={16} /> Print
-                </button>
-              )}
-              {canDeleteForm(form) && (
-                <button className="btn btn-danger hide-on-print" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }} onClick={() => handleDeleteForm(form.id)}>
-                  <Trash2 size={14} /> Delete
-                </button>
-              )}
-              <span className={`badge badge-${form.status}`}>{form.status}</span>
-               {form.is_completed && (
-                <span className="badge badge-Approved" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34D399', marginLeft: '0.5rem' }}>
-                  Completed
-                </span>
-              )}
-            </div>
-          </div>
-          
-          <div style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-muted)' }}>
-            <p><strong>Created By:</strong> {form.created_by_name}</p>
-            <p><strong>Date:</strong> {new Date(form.created_at).toLocaleDateString()}</p>
-            {form.is_completed && form.completed_at && (() => {
-              const days = getAutoDeleteDays(form.completed_at);
-              return (
-                <p style={{ color: '#F87171', fontWeight: 500, marginTop: '0.25rem' }}>
-                  <strong>Auto-deletes in:</strong> {days} {days === 1 ? 'day' : 'days'}
-                </p>
-              );
-            })()}
-          </div>
+                <div style={{ marginBottom: '2rem', fontSize: '14pt', color: 'black' }}>
+                  <strong>Decision Status:</strong> {form.status}
+                  {form.approved_by_name && ` (by ${form.approved_by_name}, Section ${form.approved_by_section || 'N/A'})`}
+                  {form.status === 'Rejected' && form.rejection_queries && ` - Queries: ${form.rejection_queries}`}
+                </div>
 
-          <button 
-            className="btn btn-secondary hide-on-print" 
-            style={{ width: '100%', marginBottom: isExpanded ? '1rem' : '0' }} 
-            onClick={() => toggleExpand(form.id)}
-          >
-            {isExpanded ? 'Hide Details' : 'View Details'}
-          </button>
+                <div style={{ fontSize: '14pt', color: 'black', marginBottom: '2rem' }}>
+                  <strong>Participants:</strong>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '1rem', border: '1px solid black' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'left', width: '10%' }}>S.No</th>
+                        <th style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'left', width: '90%' }}>Name</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {form.participants && form.participants.map((p, index) => (
+                        <tr key={p.id}>
+                          <td style={{ border: '1px solid black', padding: '0.5rem' }}>{index + 1}</td>
+                          <td style={{ border: '1px solid black', padding: '0.5rem' }}>{p.username}</td>
+                        </tr>
+                      ))}
+                      {(!form.participants || form.participants.length === 0) && (
+                        <tr>
+                          <td colSpan="2" style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'center' }}>No participants</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-          {isExpanded && (
-            <>
-              <div style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-muted)' }}>
-                <p><strong>Organizers:</strong> {form.org1_name} {form.org2_name ? `, ${form.org2_name}` : ''} {form.org3_name ? `, ${form.org3_name}` : ''}</p>
-                {form.status === 'Approved' && form.approved_by_name && (
-                  <p style={{ color: '#34D399', fontWeight: 500 }}>
-                    ✓ Approved by {form.approved_by_name} (Section {form.approved_by_section || 'N/A'})
-                  </p>
-                )}
-                {form.status === 'Rejected' && form.approved_by_name && (
-                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', padding: '0.75rem', borderRadius: '8px', marginTop: '0.5rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                    <p style={{ color: '#F87171', fontWeight: 500, margin: 0 }}>
-                      ✗ Rejected by {form.approved_by_name} (Section {form.approved_by_section || 'N/A'})
-                    </p>
-                    {form.rejection_queries && (
-                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        <strong>Queries:</strong> {form.rejection_queries}
-                      </p>
-                    )}
+                <div style={{ fontSize: '14pt', color: 'black', marginBottom: '2rem' }}>
+                  <strong>Rounds:</strong>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '1rem', border: '1px solid black' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'left', width: '33.33%' }}>Round 1</th>
+                        <th style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'left', width: '33.33%' }}>Round 2</th>
+                        <th style={{ border: '1px solid black', padding: '0.5rem', textAlign: 'left', width: '33.33%' }}>Round 3</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top' }}>{form.round_1_details || 'N/A'}</td>
+                        <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top' }}>{form.round_2_details || 'N/A'}</td>
+                        <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top' }}>{form.round_3_details || 'N/A'}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {form.ppt_original_name && (
+                  <div style={{ fontSize: '14pt', color: 'black', marginBottom: '2rem' }}>
+                    <strong>Presentation (PPT):</strong> {form.ppt_original_name}
                   </div>
                 )}
               </div>
-
-              <hr style={{ borderColor: 'var(--surface-border)', margin: '1rem 0' }} />
-
-          {/* Participants Section */}
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h4 style={{ margin: 0, fontSize: '1rem' }}><Users size={16} style={{ verticalAlign: 'middle' }}/> Participants</h4>
-              {user.sub_role === 'Executive' && editingParticipants !== form.id && form.status !== 'Approved' && (
-                <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingParticipants(form)}>
-                  <Edit3 size={14} /> Edit
-                </button>
-              )}
             </div>
-            
-            {editingParticipants === form.id ? (
-              <div style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px' }}>
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                  <input 
-                    type="text" 
-                    className="input" 
-                    placeholder="Enter roll number" 
-                    value={participantInput} 
-                    onChange={(e) => setParticipantInput(e.target.value)} 
-                    onKeyDown={(e) => e.key === 'Enter' && addParticipantByRoll()}
-                  />
-                  <button className="btn btn-primary" onClick={addParticipantByRoll}>Add</button>
-                </div>
-                <div style={{ maxHeight: '150px', overflowY: 'auto', marginBottom: '1rem' }}>
-                  {selectedParticipants.map(idStr => {
-                    const u = users.find(user => user.id.toString() === idStr);
-                    return u ? (
-                      <div key={idStr} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '4px' }}>
-                        <span>{u.username} ({u.roll_number || 'No Roll #'})</span>
-                        <button className="btn btn-danger" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => toggleParticipant(u.id)}>Remove</button>
-                      </div>
-                    ) : null;
-                  })}
-                  {selectedParticipants.length === 0 && <span style={{ color: 'var(--text-muted)' }}>No participants added yet.</span>}
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn btn-primary" onClick={() => saveParticipants(form.id)}>Save</button>
-                  <button className="btn btn-secondary" onClick={() => { setEditingParticipants(null); setParticipantInput(''); }}>Cancel</button>
-                </div>
-              </div>
-            ) : (
-              <p style={{ fontSize: '0.85rem' }}>
-                {form.participants.length > 0 
-                  ? form.participants.map(p => p.username).join(', ') 
+          );
+        })}
+      </div>
+
+      {/* Modal for viewing form details */}
+      {viewingForm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgba(15, 23, 42, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: '1rem'
+        }} onClick={() => setViewingForm(null)}>
+          <div className="glass-panel" style={{
+            maxWidth: '650px',
+            width: '100%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            position: 'relative',
+            border: '1px solid var(--surface-border)',
+            boxShadow: 'var(--glass-shadow)',
+          }} onClick={(e) => e.stopPropagation()}>
+            <button 
+              className="btn btn-secondary" 
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                padding: '0.25rem 0.6rem',
+                fontSize: '0.85rem'
+              }}
+              onClick={() => setViewingForm(null)}
+            >
+              ✕ Close
+            </button>
+
+            <h2 style={{ paddingRight: '3rem', wordBreak: 'break-all' }}>{viewingForm.event_name}</h2>
+
+            <div style={{ fontSize: '0.9rem', marginBottom: '1.25rem', color: 'var(--text-muted)' }}>
+              <p><strong>Created By:</strong> {viewingForm.created_by_name}</p>
+              <p><strong>Date:</strong> {new Date(viewingForm.created_at).toLocaleDateString()}</p>
+              <p><strong>Status:</strong> <span className={`badge badge-${viewingForm.status}`}>{viewingForm.status}</span></p>
+            </div>
+
+            <hr style={{ borderColor: 'var(--surface-border)', margin: '1rem 0' }} />
+
+            <div style={{ fontSize: '0.9rem', marginBottom: '1.25rem' }}>
+              <h4 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Organizers</h4>
+              <p>{viewingForm.org1_name} {viewingForm.org2_name ? `, ${viewingForm.org2_name}` : ''} {viewingForm.org3_name ? `, ${viewingForm.org3_name}` : ''}</p>
+            </div>
+
+            <div style={{ fontSize: '0.9rem', marginBottom: '1.25rem' }}>
+              <h4 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Participants</h4>
+              <p style={{ wordBreak: 'break-word' }}>
+                {viewingForm.participants && viewingForm.participants.length > 0 
+                  ? viewingForm.participants.map(p => p.username).join(', ') 
                   : 'No participants assigned'}
               </p>
-            )}
-          </div>
-
-          {/* Rounds Section */}
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h4 style={{ margin: 0, fontSize: '1rem' }}>Rounds</h4>
-              {isOrganizer(form) && editingRounds !== form.id && form.status !== 'Approved' && (
-                <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingRounds(form)}>
-                  <Edit3 size={14} /> Edit
-                </button>
-              )}
             </div>
 
-            {editingRounds === form.id ? (
-              <div style={{ marginTop: '0.5rem' }}>
-                <textarea className="textarea" placeholder="Round 1 Details" value={roundsData.round_1} onChange={e => setRoundsData({...roundsData, round_1: e.target.value})} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '60px' }} />
-                <textarea className="textarea" placeholder="Round 2 Details" value={roundsData.round_2} onChange={e => setRoundsData({...roundsData, round_2: e.target.value})} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '60px' }} />
-                <textarea className="textarea" placeholder="Round 3 Details" value={roundsData.round_3} onChange={e => setRoundsData({...roundsData, round_3: e.target.value})} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '60px' }} />
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn btn-primary" onClick={() => saveRounds(form.id)}>Save</button>
-                  <button className="btn btn-secondary" onClick={() => setEditingRounds(null)}>Cancel</button>
+            <div style={{ fontSize: '0.9rem', marginBottom: '1.25rem' }}>
+              <h4 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Rounds Details</h4>
+              <div style={{ background: 'rgba(0,0,0,0.15)', padding: '0.75rem', borderRadius: '8px' }}>
+                <p style={{ marginBottom: '0.25rem' }}><strong>Round 1:</strong> {viewingForm.round_1_details || 'N/A'}</p>
+                <p style={{ marginBottom: '0.25rem' }}><strong>Round 2:</strong> {viewingForm.round_2_details || 'N/A'}</p>
+                <p><strong>Round 3:</strong> {viewingForm.round_3_details || 'N/A'}</p>
+              </div>
+            </div>
+
+            {viewingForm.ppt_filename && (
+              <div style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                <h4 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Presentation (PPT)</h4>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
+                  <span style={{ flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    📄 {viewingForm.ppt_original_name || viewingForm.ppt_filename}
+                  </span>
+                  <a
+                    href={getPptUrl(viewingForm.ppt_filename)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download={viewingForm.ppt_original_name || 'presentation.pptx'}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none' }}
+                  >
+                    Download
+                  </a>
                 </div>
               </div>
-            ) : (
-              <div style={{ fontSize: '0.85rem', background: 'rgba(0,0,0,0.1)', padding: '0.75rem', borderRadius: '8px' }}>
-                <p><strong>R1:</strong> {form.round_1_details || 'N/A'}</p>
-                <p><strong>R2:</strong> {form.round_2_details || 'N/A'}</p>
-                <p><strong>R3:</strong> {form.round_3_details || 'N/A'}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Presentation (PPT) Section */}
-          <div style={{ marginBottom: '1rem' }}>
-            <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>Presentation (PPT)</h4>
-            {form.ppt_filename ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.5rem 0', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
-                <span style={{ fontSize: '0.85rem', flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                  📄 {form.ppt_original_name || form.ppt_filename}
-                </span>
-                <a
-                  href={getPptUrl(form.ppt_filename)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  download={form.ppt_original_name || 'presentation.pptx'}
-                  className="btn btn-secondary"
-                  style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none', display: 'inline-block' }}
-                >
-                  Download
-                </a>
-              </div>
-            ) : (
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.5rem 0' }}>No PPT uploaded yet.</p>
             )}
 
-            {isOrganizer(form) && form.status !== 'Approved' && (
-              <div style={{ marginTop: '0.5rem' }}>
-                <input
-                  type="file"
-                  accept=".ppt,.pptx"
-                  style={{ display: 'none' }}
-                  id={`ppt-file-input-${form.id}`}
-                  onChange={(e) => handlePptUpload(form.id, e.target.files[0])}
-                  disabled={uploadingFormId === form.id}
-                />
-                <label
-                  htmlFor={`ppt-file-input-${form.id}`}
-                  className="btn btn-primary"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.8rem', fontSize: '0.8rem', cursor: 'pointer' }}
-                >
-                  {uploadingFormId === form.id 
-                    ? 'Uploading...' 
-                    : form.ppt_filename 
-                      ? 'Change PPT' 
-                      : 'Upload PPT'}
-                </label>
-              </div>
-            )}
-          </div>
-
-          {/* Approval Actions (Secretary/Executive Student only) */}
-          {user.role === 'Student' && ['Secretary', 'Executive'].includes(user.sub_role) && form.status === 'Pending' && (
-            (!isFormComplete(form) || editingParticipants === form.id) ? (
-              <div style={{ marginTop: '1rem', background: 'rgba(245, 158, 11, 0.1)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '0.85rem', color: '#F59E0B' }}>
-                ⚠ All details (Event Name, Round 1 details, PPT file, and saved Participants) must be completed before you can Approve or Reject.
-              </div>
-            ) : rejectingFormId === form.id ? (
-              <div style={{ marginTop: '1rem', background: 'rgba(239, 68, 68, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: 500 }}>Rejection Queries / Reasons</label>
-                <textarea
-                  className="textarea"
-                  placeholder="Enter details of why this form is being rejected..."
-                  value={rejectionQueries}
-                  onChange={(e) => setRejectionQueries(e.target.value)}
-                  style={{ width: '100%', marginBottom: '0.5rem', minHeight: '80px' }}
-                  required
-                />
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn btn-danger" onClick={() => submitRejection(form.id)}>Submit Rejection</button>
-                  <button className="btn btn-secondary" onClick={() => setRejectingFormId(null)}>Cancel</button>
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-                <button className="btn btn-primary" style={{ flex: 1, background: 'var(--secondary)' }} onClick={() => handleStatusChange(form.id, 'Approved')}>
-                  <CheckCircle size={16} /> Approve
-                </button>
-                <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { setRejectingFormId(form.id); setRejectionQueries(''); }}>
-                  <XCircle size={16} /> Reject
-                </button>
-              </div>
-            )
-          )}
-
-          {/* Organizer Resubmit Action */}
-          {isOrganizer(form) && form.status === 'Rejected' && (
-            <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-              <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: '#60A5FA', fontWeight: 500 }}>
-                Form has rejection queries. Edit rounds or PPT above, then click below to resubmit.
-              </p>
-              <button
-                className="btn btn-primary"
-                style={{ width: '100%', background: '#3B82F6' }}
-                onClick={() => handleResubmit(form.id)}
-              >
-                Resubmit Form
-              </button>
-            </div>
-          )}
-
-          {/* Completion Section for Approved Active Events */}
-          {form.status === 'Approved' && !form.is_completed && canCompleteForm(form) && (
-            <div style={{ 
-              marginTop: '1.5rem', 
-              background: 'rgba(99, 102, 241, 0.1)', 
-              padding: '1rem', 
-              borderRadius: '8px', 
-              border: '1px solid rgba(99, 102, 241, 0.2)',
-              textAlign: 'center'
-            }}>
-              <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: '#818CF8', fontWeight: 500 }}>
-                Is this event completed?
-              </p>
-              <button 
-                className="btn btn-primary" 
-                style={{ width: '100%', background: 'var(--primary)' }}
-                onClick={() => handleCompleteChange(form.id, true)}
-              >
-                Mark as Completed
-              </button>
-            </div>
-          )}
-
-          {/* Completed Event Section */}
-          {form.is_completed && (
-            <div style={{ 
-              marginTop: '1.5rem', 
-              background: 'rgba(52, 211, 153, 0.1)', 
-              padding: '1rem', 
-              borderRadius: '8px', 
-              border: '1px solid rgba(52, 211, 153, 0.2)',
-              textAlign: 'center'
-            }}>
-              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#34D399', fontWeight: 600 }}>
-                ✓ This event is Completed
-              </p>
-              {canCompleteForm(form) && (
+            {/* Reopen Action for authorized students (Secretary/Executive) */}
+            {viewingForm.is_completed && canCompleteForm(viewingForm) && (
+              <div style={{ 
+                marginTop: '1.5rem', 
+                background: 'rgba(99, 102, 241, 0.1)', 
+                padding: '1rem', 
+                borderRadius: '8px', 
+                border: '1px solid rgba(99, 102, 241, 0.2)',
+                textAlign: 'center'
+              }}>
                 <button 
-                  className="btn btn-secondary" 
-                  style={{ width: '100%', marginTop: '0.5rem', padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-                  onClick={() => handleCompleteChange(form.id, false)}
+                  className="btn btn-primary" 
+                  style={{ width: '100%', background: 'var(--primary)' }}
+                  onClick={async () => {
+                    await handleCompleteChange(viewingForm.id, false);
+                    setViewingForm(null);
+                  }}
                 >
                   Reopen Event
                 </button>
-              )}
-            </div>
-          )}
-            </>
-          )}
+              </div>
+            )}
           </div>
         </div>
-      )})}
-      {filteredForms.length === 0 && (
-        <p style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-muted)', padding: '2rem 0' }}>
-          {activeTab === 'completed' ? 'No completed events found.' : 'No active event forms found.'}
-        </p>
       )}
-      </div>
     </div>
   );
 };
