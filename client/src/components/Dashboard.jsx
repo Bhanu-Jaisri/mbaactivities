@@ -33,7 +33,25 @@ const Dashboard = () => {
   return (
     <div>
       <nav className="nav-bar glass-panel" style={{ borderRadius: '0', borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}>
-        <div className="nav-container">
+        <div className="nav-container" style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+          <div className="nav-brand" style={{ display: 'flex', flexDirection: 'column', marginRight: '1rem' }}>
+            <span style={{ 
+              fontSize: '1.05rem', 
+              fontWeight: '700', 
+              background: 'var(--logo-gradient)', 
+              WebkitBackgroundClip: 'text', 
+              WebkitTextFillColor: 'transparent',
+              lineHeight: '1.2'
+            }}>
+              Mepco Schlenk Engineering College (Autonomous)
+            </span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: '1.2' }}>
+              Sivakasi, Tamilnadu, India - 626005
+            </span>
+            <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text)', marginTop: '0.15rem', lineHeight: '1.2' }}>
+              Mepco School of Management Studies
+            </span>
+          </div>
           <div className="nav-links">
             <Link to="/" className={`btn ${location.pathname === '/' ? 'btn-secondary' : ''}`} style={{ border: 'none' }}>
               <FileText size={18} /> Forms
