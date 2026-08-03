@@ -69,7 +69,7 @@ async function initDb() {
         username VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         role user_role NOT NULL,
-        sub_role student_subrole,
+        sub_role VARCHAR(255),
         roll_number VARCHAR(255) UNIQUE,
         section VARCHAR(10),
         year VARCHAR(50)
@@ -81,6 +81,7 @@ async function initDb() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS roll_number VARCHAR(255) UNIQUE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS section VARCHAR(10);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS year VARCHAR(50);
+      ALTER TABLE users ALTER COLUMN sub_role TYPE VARCHAR(255);
     `);
 
     await amirthaClient.query(`
@@ -101,7 +102,10 @@ async function initDb() {
         rejection_queries TEXT,
         is_completed BOOLEAN DEFAULT FALSE,
         completed_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        event_date VARCHAR(255),
+        event_time VARCHAR(255),
+        created_date VARCHAR(255)
       );
     `);
 
@@ -113,6 +117,9 @@ async function initDb() {
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS rejection_queries TEXT;
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS is_completed BOOLEAN DEFAULT FALSE;
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+      ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS event_date VARCHAR(255);
+      ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS event_time VARCHAR(255);
+      ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS created_date VARCHAR(255);
     `);
 
     // Migrate constraints to add ON DELETE behavior if not already set
@@ -143,6 +150,17 @@ async function initDb() {
         form_id INTEGER REFERENCES event_forms(id) ON DELETE CASCADE,
         student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         PRIMARY KEY (form_id, student_id)
+      );
+    `);
+
+    // Create agenda_details table
+    await amirthaClient.query(`
+      CREATE TABLE IF NOT EXISTS agenda_details (
+        id SERIAL PRIMARY KEY,
+        category VARCHAR(55) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        designation VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 

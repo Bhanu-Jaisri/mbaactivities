@@ -3,10 +3,11 @@ import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../AuthContext';
 import { useTheme } from '../ThemeContext';
-import { LogOut, Users, FileText, PlusCircle, Sun, Moon } from 'lucide-react';
+import { LogOut, Users, FileText, PlusCircle, Sun, Moon, Calendar } from 'lucide-react';
 import UserManagement from './UserManagement';
 import FormCreation from './FormCreation';
 import FormDetails from './FormDetails';
+import Agenda from './Agenda';
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -14,7 +15,8 @@ const Dashboard = () => {
   const location = useLocation();
 
   const canManageUsers = user.role === 'Admin' || user.role === 'Staff';
-  const canCreateForms = user.sub_role === 'Secretary';
+  const userSubRoleLower = (user.sub_role || '').toLowerCase();
+  const canCreateForms = userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert');
 
   const [stats, setStats] = useState({ student: 0, secretary: 0, executive: 0 });
 
@@ -23,8 +25,14 @@ const Dashboard = () => {
       api.get('/users').then(res => {
         const users = res.data;
         const studentCount = users.filter(u => u.role === 'Student' && (!u.sub_role || u.sub_role === 'Regular')).length;
-        const secretaryCount = users.filter(u => u.role === 'Student' && u.sub_role === 'Secretary').length;
-        const executiveCount = users.filter(u => u.role === 'Student' && u.sub_role === 'Executive').length;
+        const secretaryCount = users.filter(u => {
+          const sub = (u.sub_role || '').toLowerCase();
+          return u.role === 'Student' && (sub.includes('secret') || sub.includes('secert'));
+        }).length;
+        const executiveCount = users.filter(u => {
+          const sub = (u.sub_role || '').toLowerCase();
+          return u.role === 'Student' && sub.includes('exec');
+        }).length;
         setStats({ student: studentCount, secretary: secretaryCount, executive: executiveCount });
       }).catch(err => console.error(err));
     }
@@ -66,6 +74,9 @@ const Dashboard = () => {
                 <Users size={18} /> Users
               </Link>
             )}
+            <Link to="/agenda" className={`btn ${location.pathname === '/agenda' ? 'btn-secondary' : ''}`} style={{ border: 'none' }}>
+              <Calendar size={18} /> Agenda
+            </Link>
           </div>
         </div>
         <div className="nav-user">
@@ -108,6 +119,7 @@ const Dashboard = () => {
           <Route path="/" element={<FormDetails />} />
           {canCreateForms && <Route path="/create-form" element={<FormCreation />} />}
           {canManageUsers && <Route path="/users" element={<UserManagement />} />}
+          <Route path="/agenda" element={<Agenda />} />
         </Routes>
       </div>
     </div>

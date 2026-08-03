@@ -15,6 +15,59 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-for-amirtha';
 
+// --- HELPERS ---
+const isAssociationAligned = (creatorSubRole, userSubRole) => {
+  const creator = (creatorSubRole || 'Regular').toUpperCase();
+  const usr = (userSubRole || 'Regular').toUpperCase();
+
+  const isNismCreator = creator.includes('NISM');
+  const isNipmCreator = creator.includes('NIPM') || creator.includes('SIPM');
+  const isAdCreator = creator.includes('AD CLUB');
+  const isNormalCreator = !isNismCreator && !isNipmCreator && !isAdCreator;
+
+  const isNismUser = usr.includes('NISM');
+  const isNipmUser = usr.includes('NIPM') || usr.includes('SIPM');
+  const isAdUser = usr.includes('AD CLUB');
+  const isNormalUser = !isNismUser && !isNipmUser && !isAdUser;
+
+  if (isNismCreator && isNismUser) return true;
+  if (isNipmCreator && isNipmUser) return true;
+  if (isAdCreator && isAdUser) return true;
+  if (isNormalCreator && isNormalUser) return true;
+
+  return false;
+};
+
+const checkStudentConflict = async (eventDate, studentIds, ignoreFormId = null) => {
+  if (!eventDate || !studentIds || studentIds.length === 0) return null;
+
+  const validIds = studentIds.filter(id => id != null);
+  if (validIds.length === 0) return null;
+
+  const query = `
+    SELECT f.id, f.event_name, f.event_date, u.username, u.id as student_id, 'Organizer' as role_type
+    FROM event_forms f
+    JOIN users u ON u.id IN (f.organizer_1, f.organizer_2, f.organizer_3)
+    WHERE f.event_date = $1 AND u.id = ANY($2) ${ignoreFormId ? 'AND f.id <> $3' : ''}
+    
+    UNION ALL
+    
+    SELECT f.id, f.event_name, f.event_date, u.username, u.id as student_id, 'Participant' as role_type
+    FROM event_forms f
+    JOIN form_participants fp ON f.id = fp.form_id
+    JOIN users u ON fp.student_id = u.id
+    WHERE f.event_date = $1 AND u.id = ANY($2) ${ignoreFormId ? 'AND f.id <> $3' : ''}
+  `;
+
+  const params = ignoreFormId ? [eventDate, validIds, ignoreFormId] : [eventDate, validIds];
+  const result = await db.query(query, params);
+
+  if (result.rows.length > 0) {
+    return result.rows[0];
+  }
+  return null;
+};
+
 // --- MIDDLEWARES ---
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -39,7 +92,22 @@ const authorizeRole = (...allowedRoles) => {
 
 const authorizeSubRole = (...allowedSubRoles) => {
   return (req, res, next) => {
-    if (!req.user || req.user.role !== 'Student' || !allowedSubRoles.includes(req.user.sub_role)) {
+    if (!req.user || req.user.role !== 'Student') {
+      return res.status(403).json({ error: 'Unauthorized sub-role' });
+    }
+    const hasMatch = allowedSubRoles.some(allowed => {
+      if (!req.user.sub_role) return false;
+      const userSub = req.user.sub_role.toLowerCase();
+      const allow = allowed.toLowerCase();
+      
+      // Dynamic support for spelling variations of secretary/executive
+      if (allow.includes('secret') && (userSub.includes('secret') || userSub.includes('secert'))) return true;
+      if (allow.includes('exec') && userSub.includes('exec')) return true;
+      
+      if (userSub === allow) return true;
+      return userSub.includes(allow);
+    });
+    if (!hasMatch) {
       return res.status(403).json({ error: 'Unauthorized sub-role' });
     }
     next();
@@ -268,11 +336,18 @@ app.post('/api/users/bulk-delete', authenticateToken, async (req, res) => {
 
 // Create Form (Secretary only)
 app.post('/api/forms', authenticateToken, authorizeSubRole('Secretary'), async (req, res) => {
-  const { event_name, organizer_1, organizer_2, organizer_3 } = req.body;
+  const { event_name, organizer_1, organizer_2, organizer_3, event_date, event_time, created_date } = req.body;
   try {
+    const conflict = await checkStudentConflict(event_date, [organizer_1, organizer_2, organizer_3]);
+    if (conflict) {
+      return res.status(400).json({
+        error: `Student ${conflict.username} is already an ${conflict.role_type.toLowerCase()} in event "${conflict.event_name}" on ${event_date}.`
+      });
+    }
+
     const result = await db.query(
-      'INSERT INTO event_forms (event_name, created_by, organizer_1, organizer_2, organizer_3) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [event_name, req.user.id, organizer_1, organizer_2 || null, organizer_3 || null]
+      'INSERT INTO event_forms (event_name, created_by, organizer_1, organizer_2, organizer_3, event_date, event_time, created_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+      [event_name, req.user.id, organizer_1, organizer_2 || null, organizer_3 || null, event_date || null, event_time || null, created_date || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -302,7 +377,8 @@ app.delete('/api/forms/:id', authenticateToken, async (req, res) => {
       if (form.status === 'Approved') {
         return res.status(400).json({ error: 'Cannot delete an approved active event form' });
       }
-      const isCreatorSecretary = (req.user.role === 'Student' && req.user.sub_role === 'Secretary' && form.created_by === req.user.id);
+      const userSubRoleLower = (req.user.sub_role || '').toLowerCase();
+      const isCreatorSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && form.created_by === req.user.id);
       if (!isCreatorSecretary && !isStaffOrAdmin) {
         return res.status(403).json({ error: 'Only the creator Secretary or Staff/Admin can delete this form' });
       }
@@ -334,6 +410,7 @@ app.get('/api/forms', authenticateToken, async (req, res) => {
     const query = `
       SELECT f.*, 
         u1.username as created_by_name,
+        u1.sub_role as created_by_sub_role,
         o1.username as org1_name,
         o2.username as org2_name,
         o3.username as org3_name,
@@ -373,10 +450,32 @@ app.put('/api/forms/:id/participants', authenticateToken, authorizeSubRole('Exec
   const { id } = req.params;
   const { student_ids } = req.body; // Array of student IDs
   try {
-    const formCheck = await db.query('SELECT status FROM event_forms WHERE id = $1', [id]);
+    const formCheck = await db.query('SELECT f.status, f.is_completed, f.event_date, f.organizer_1, f.organizer_2, f.organizer_3, u.sub_role as creator_sub_role FROM event_forms f LEFT JOIN users u ON f.created_by = u.id WHERE f.id = $1', [id]);
     if (formCheck.rows.length === 0) return res.status(404).json({ error: 'Form not found' });
-    if (formCheck.rows[0].status === 'Approved') {
-      return res.status(403).json({ error: 'Cannot edit participants on an approved form' });
+    const form = formCheck.rows[0];
+    if (form.is_completed) {
+      return res.status(403).json({ error: 'Cannot edit participants on a completed form' });
+    }
+    if (!isAssociationAligned(form.creator_sub_role, req.user.sub_role)) {
+      return res.status(403).json({ error: 'Unauthorized: Executive from different association' });
+    }
+
+    // 1. Check if any participant is already an organizer of this form
+    const organizers = [form.organizer_1, form.organizer_2, form.organizer_3].filter(oid => oid != null);
+    for (let sid of student_ids) {
+      if (organizers.includes(sid)) {
+        const uRes = await db.query('SELECT username FROM users WHERE id = $1', [sid]);
+        const uname = uRes.rows[0]?.username || 'Student';
+        return res.status(400).json({ error: `Student ${uname} is already an organizer of this event.` });
+      }
+    }
+
+    // 2. Check if any participant has a conflict in another event on the same date
+    const conflict = await checkStudentConflict(form.event_date, student_ids, id);
+    if (conflict) {
+      return res.status(400).json({
+        error: `Student ${conflict.username} is already an ${conflict.role_type.toLowerCase()} in event "${conflict.event_name}" on ${form.event_date}.`
+      });
     }
 
     await db.query('BEGIN');
@@ -388,6 +487,49 @@ app.put('/api/forms/:id/participants', authenticateToken, authorizeSubRole('Exec
     res.json({ message: 'Participants updated' });
   } catch (err) {
     await db.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Edit Event Date & Time (Executive/Creator Secretary/Staff/Admin)
+app.put('/api/forms/:id/datetime', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { event_date, event_time } = req.body;
+  try {
+    const formCheck = await db.query('SELECT f.created_by, f.is_completed, f.organizer_1, f.organizer_2, f.organizer_3, u.sub_role as creator_sub_role FROM event_forms f LEFT JOIN users u ON f.created_by = u.id WHERE f.id = $1', [id]);
+    if (formCheck.rows.length === 0) return res.status(404).json({ error: 'Form not found' });
+    const form = formCheck.rows[0];
+    if (form.is_completed) {
+      return res.status(403).json({ error: 'Cannot edit date/time on a completed form' });
+    }
+
+    const userSubRoleLower = (req.user.sub_role || '').toLowerCase();
+    const isCreatorSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && form.created_by === req.user.id);
+    const isExecutive = (req.user.role === 'Student' && userSubRoleLower.includes('exec') && isAssociationAligned(form.creator_sub_role, req.user.sub_role));
+    const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
+
+    if (!isCreatorSecretary && !isExecutive && !isStaffOrAdmin) {
+      return res.status(403).json({ error: 'Unauthorized to edit date and time' });
+    }
+
+    // Check conflict on the new event_date for organizers and participants
+    const partsRes = await db.query('SELECT student_id FROM form_participants WHERE form_id = $1', [id]);
+    const participantIds = partsRes.rows.map(r => r.student_id);
+    const allStudentIds = [form.organizer_1, form.organizer_2, form.organizer_3, ...participantIds].filter(oid => oid != null);
+
+    const conflict = await checkStudentConflict(event_date, allStudentIds, id);
+    if (conflict) {
+      return res.status(400).json({
+        error: `Student ${conflict.username} is already an ${conflict.role_type.toLowerCase()} in event "${conflict.event_name}" on ${event_date}.`
+      });
+    }
+
+    await db.query(
+      'UPDATE event_forms SET event_date = $1, event_time = $2 WHERE id = $3',
+      [event_date || null, event_time || null, id]
+    );
+    res.json({ message: 'Event date and time updated' });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -507,8 +649,10 @@ app.put('/api/forms/:id/status', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { status, queries } = req.body; // 'Approved' or 'Rejected', queries is optional/required for rejection
 
-  // Check role: must be Student and sub_role is Secretary or Executive
-  if (req.user.role !== 'Student' || !['Secretary', 'Executive'].includes(req.user.sub_role)) {
+  // Check role: must be Student and sub_role is Secretary or Executive (including club-specific ones)
+  const userSubRoleLower = (req.user.sub_role || '').toLowerCase();
+  const isSecOrExec = userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert') || userSubRoleLower.includes('exec');
+  if (req.user.role !== 'Student' || !isSecOrExec) {
     return res.status(403).json({ error: 'Only Secretary or Executive can approve or reject event forms' });
   }
 
@@ -520,13 +664,19 @@ app.put('/api/forms/:id/status', authenticateToken, async (req, res) => {
     // Check if form is complete (has event_name, all 3 rounds details, ppt_filename, and at least 1 participant)
     const formCheck = await db.query(`
       SELECT f.*,
+        u.sub_role as creator_sub_role,
         (SELECT COUNT(*) FROM form_participants WHERE form_id = f.id) as participant_count
       FROM event_forms f
+      LEFT JOIN users u ON f.created_by = u.id
       WHERE f.id = $1
     `, [id]);
 
     if (formCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Form not found' });
+    }
+
+    if (!isAssociationAligned(formCheck.rows[0].creator_sub_role, req.user.sub_role)) {
+      return res.status(403).json({ error: 'Unauthorized: Association alignment mismatch' });
     }
 
     const form = formCheck.rows[0];
@@ -562,7 +712,7 @@ app.put('/api/forms/:id/complete', authenticateToken, async (req, res) => {
   }
 
   try {
-    const formCheck = await db.query('SELECT * FROM event_forms WHERE id = $1', [id]);
+    const formCheck = await db.query('SELECT f.*, u.sub_role as creator_sub_role FROM event_forms f LEFT JOIN users u ON f.created_by = u.id WHERE f.id = $1', [id]);
     if (formCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Form not found' });
     }
@@ -573,7 +723,8 @@ app.put('/api/forms/:id/complete', authenticateToken, async (req, res) => {
     }
 
     // Check authorization: must be Student and sub_role is Secretary or Executive
-    const isSecOrExec = req.user.role === 'Student' && ['Secretary', 'Executive'].includes(req.user.sub_role);
+    const userSubRoleLower = (req.user.sub_role || '').toLowerCase();
+    const isSecOrExec = req.user.role === 'Student' && (userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert') || userSubRoleLower.includes('exec')) && isAssociationAligned(form.creator_sub_role, req.user.sub_role);
 
     if (!isSecOrExec) {
       return res.status(403).json({ error: 'Only student Secretary or Executive can change the completion status of this event' });
@@ -612,6 +763,161 @@ app.put('/api/forms/:id/resubmit', authenticateToken, async (req, res) => {
       [id]
     );
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get Agenda Details (All users)
+app.get('/api/agenda', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM agenda_details ORDER BY id ASC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add Agenda Detail (Staff/Admin only, supports single and bulk insert)
+app.post('/api/agenda', authenticateToken, async (req, res) => {
+  const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
+  if (!isStaffOrAdmin) {
+    return res.status(403).json({ error: 'Only Staff and Admins can create agenda details' });
+  }
+
+  const body = req.body;
+  if (Array.isArray(body)) {
+    // Validate all items
+    for (const item of body) {
+      if (!item.category || !item.name) {
+        return res.status(400).json({ error: 'Category and name are required for all members' });
+      }
+    }
+    try {
+      await db.query('BEGIN');
+      const inserted = [];
+      for (const item of body) {
+        const result = await db.query(
+          'INSERT INTO agenda_details (category, name, designation) VALUES ($1, $2, $3) RETURNING *',
+          [item.category, item.name, item.designation || null]
+        );
+        inserted.push(result.rows[0]);
+      }
+      await db.query('COMMIT');
+      res.json(inserted);
+    } catch (err) {
+      await db.query('ROLLBACK');
+      res.status(500).json({ error: err.message });
+    }
+  } else {
+    // Single insert
+    const { category, name, designation } = body;
+    if (!category || !name) {
+      return res.status(400).json({ error: 'Category and name are required' });
+    }
+    try {
+      const result = await db.query(
+        'INSERT INTO agenda_details (category, name, designation) VALUES ($1, $2, $3) RETURNING *',
+        [category, name, designation || null]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+// Bulk Edit Agenda Details (Staff/Admin only)
+app.put('/api/agenda/bulk', authenticateToken, async (req, res) => {
+  const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
+  if (!isStaffOrAdmin) {
+    return res.status(403).json({ error: 'Only Staff and Admins can edit agenda details' });
+  }
+  const { items } = req.body;
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: 'Items must be an array' });
+  }
+  for (const item of items) {
+    if (!item.id || !item.category || !item.name) {
+      return res.status(400).json({ error: 'ID, Category and name are required for all members' });
+    }
+  }
+  try {
+    await db.query('BEGIN');
+    const updated = [];
+    for (const item of items) {
+      const result = await db.query(
+        'UPDATE agenda_details SET category = $1, name = $2, designation = $3 WHERE id = $4 RETURNING *',
+        [item.category, item.name, item.designation || null, item.id]
+      );
+      if (result.rows.length > 0) {
+        updated.push(result.rows[0]);
+      }
+    }
+    await db.query('COMMIT');
+    res.json(updated);
+  } catch (err) {
+    await db.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Edit Agenda Detail (Staff/Admin only)
+app.put('/api/agenda/:id', authenticateToken, async (req, res) => {
+  const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
+  if (!isStaffOrAdmin) {
+    return res.status(403).json({ error: 'Only Staff and Admins can edit agenda details' });
+  }
+  const { id } = req.params;
+  const { category, name, designation } = req.body;
+  if (!category || !name) {
+    return res.status(400).json({ error: 'Category and name are required' });
+  }
+  try {
+    const result = await db.query(
+      'UPDATE agenda_details SET category = $1, name = $2, designation = $3 WHERE id = $4 RETURNING *',
+      [category, name, designation || null, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Agenda detail not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Agenda Detail (Staff/Admin only)
+app.delete('/api/agenda/:id', authenticateToken, async (req, res) => {
+  const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
+  if (!isStaffOrAdmin) {
+    return res.status(403).json({ error: 'Only Staff and Admins can delete agenda details' });
+  }
+  const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM agenda_details WHERE id = $1 RETURNING *', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Agenda detail not found' });
+    }
+    res.json({ message: 'Agenda detail deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk Delete Agenda Details (Staff/Admin only)
+app.post('/api/agenda/bulk-delete', authenticateToken, async (req, res) => {
+  const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
+  if (!isStaffOrAdmin) {
+    return res.status(403).json({ error: 'Only Staff and Admins can delete agenda details' });
+  }
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No IDs provided' });
+  }
+  try {
+    await db.query('DELETE FROM agenda_details WHERE id = ANY($1)', [ids]);
+    res.json({ message: `${ids.length} detail(s) deleted successfully` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

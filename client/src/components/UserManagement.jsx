@@ -207,6 +207,12 @@ const UserManagement = () => {
                   <option value="Regular">Regular Student</option>
                   <option value="Secretary">Secretary</option>
                   <option value="Executive">Executive</option>
+                  <option value="NISM Secretary">NISM Secretary</option>
+                  <option value="NISM Executive">NISM Executive</option>
+                  <option value="NIPM Secretary">NIPM Secretary</option>
+                  <option value="NIPM Executive">NIPM Executive</option>
+                  <option value="Ad Club Secretary">Ad Club Secretary</option>
+                  <option value="Ad Club Executive">Ad Club Executive</option>
                 </select>
               </div>
               <div className="input-group">

@@ -7,6 +7,10 @@ const FormCreation = () => {
   const [org1, setOrg1] = useState('');
   const [org2, setOrg2] = useState('');
   const [org3, setOrg3] = useState('');
+  const [eventDate, setEventDate] = useState('');
+  const [timeHour, setTimeHour] = useState('10');
+  const [timeMinute, setTimeMinute] = useState('00');
+  const [timeAmpm, setTimeAmpm] = useState('AM');
   
   // Organizer Filter States
   const [org1Year, setOrg1Year] = useState('');
@@ -62,12 +66,17 @@ const FormCreation = () => {
     if (org2 && !org2Id) return alert('Organizer 2 not found. Please check the roll number.');
     if (org3 && !org3Id) return alert('Organizer 3 not found. Please check the roll number.');
 
+    const eventTime = `${timeHour}:${timeMinute} ${timeAmpm}`;
+
     try {
       await api.post('/forms', {
         event_name: eventName,
         organizer_1: org1Id,
         organizer_2: org2Id || null,
-        organizer_3: org3Id || null
+        organizer_3: org3Id || null,
+        event_date: eventDate,
+        event_time: eventTime,
+        created_date: new Date().toISOString().split('T')[0]
       });
       navigate('/');
     } catch (err) {
@@ -83,7 +92,33 @@ const FormCreation = () => {
           <label>Event Name *</label>
           <input type="text" className="input" value={eventName} onChange={e => setEventName(e.target.value)} required />
         </div>
-        
+
+        <div className="input-group">
+          <label>Event Date *</label>
+          <input type="date" className="input" value={eventDate} onChange={e => setEventDate(e.target.value)} required />
+        </div>
+
+        <div className="input-group">
+          <label>Event Time *</label>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={timeHour} onChange={e => setTimeHour(e.target.value)}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
+                <option key={h} value={h.toString().padStart(2, '0')}>{h.toString().padStart(2, '0')}</option>
+              ))}
+            </select>
+            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={timeMinute} onChange={e => setTimeMinute(e.target.value)}>
+              {Array.from({ length: 60 }, (_, i) => i).map(m => (
+                <option key={m} value={m.toString().padStart(2, '0')}>{m.toString().padStart(2, '0')}</option>
+              ))}
+            </select>
+            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={timeAmpm} onChange={e => setTimeAmpm(e.target.value)}>
+              <option value="AM">AM</option>
+              <option value="PM">PM</option>
+            </select>
+          </div>
+        </div>
+
+
         <div className="input-group">
           <label>Organizer 1 *</label>
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
