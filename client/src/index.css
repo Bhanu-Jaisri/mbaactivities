@@ -34,6 +34,8 @@
   --badge-staff-text: #BAE6FD;
   --badge-student-bg: rgba(79, 70, 229, 0.2);
   --badge-student-text: #C4B5FD;
+  --modal-bg: #1e293b;
+  --modal-overlay: rgba(15, 23, 42, 0.75);
 }
 
 [data-theme="light"] {
@@ -47,11 +49,13 @@
   --danger: #EF4444;
   --danger-hover: #DC2626;
   --background: #f8fafc;
-  --surface: rgba(255, 255, 255, 0.75);
+  --surface: rgba(255, 255, 255, 0.95);
   --surface-border: rgba(15, 118, 110, 0.15);
   --text: #0f172a;
   --text-muted: #475569;
   --input-bg: #ffffff;
+  --modal-bg: #ffffff;
+  --modal-overlay: rgba(15, 23, 42, 0.4);
   --glass-shadow: 0 8px 32px 0 rgba(15, 118, 110, 0.08);
   --gradient-bg: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 50%, #ccfbf1 100%);
   --heading-color: #0f172a;
