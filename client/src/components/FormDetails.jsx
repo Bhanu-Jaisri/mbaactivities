@@ -868,34 +868,9 @@ const FormDetails = () => {
                       </td>
                       <td style={{ padding: '1rem' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.85rem' }}>
-                          <div>
-                            <strong>{form.org1_name}</strong>
-                            {(form.org1_roll || form.org1_year || form.org1_section) && (
-                              <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginLeft: '0.35rem' }}>
-                                ({[form.org1_roll, form.org1_year, form.org1_section ? `Sec ${form.org1_section}` : null].filter(Boolean).join(', ')})
-                              </span>
-                            )}
-                          </div>
-                          {form.org2_name && (
-                            <div>
-                              <strong>{form.org2_name}</strong>
-                              {(form.org2_roll || form.org2_year || form.org2_section) && (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginLeft: '0.35rem' }}>
-                                  ({[form.org2_roll, form.org2_year, form.org2_section ? `Sec ${form.org2_section}` : null].filter(Boolean).join(', ')})
-                                </span>
-                              )}
-                            </div>
-                          )}
-                          {form.org3_name && (
-                            <div>
-                              <strong>{form.org3_name}</strong>
-                              {(form.org3_roll || form.org3_year || form.org3_section) && (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginLeft: '0.35rem' }}>
-                                  ({[form.org3_roll, form.org3_year, form.org3_section ? `Sec ${form.org3_section}` : null].filter(Boolean).join(', ')})
-                                </span>
-                              )}
-                            </div>
-                          )}
+                          <div><strong>{form.org1_name}</strong></div>
+                          {form.org2_name && <div><strong>{form.org2_name}</strong></div>}
+                          {form.org3_name && <div><strong>{form.org3_name}</strong></div>}
                         </div>
                       </td>
                       <td style={{ padding: '1rem' }}>
