@@ -411,9 +411,9 @@ app.get('/api/forms', authenticateToken, async (req, res) => {
       SELECT f.*, 
         u1.username as created_by_name,
         u1.sub_role as created_by_sub_role,
-        o1.username as org1_name,
-        o2.username as org2_name,
-        o3.username as org3_name,
+        o1.username as org1_name, o1.section as org1_section, o1.sub_role as org1_sub_role, o1.roll_number as org1_roll, o1.year as org1_year,
+        o2.username as org2_name, o2.section as org2_section, o2.sub_role as org2_sub_role, o2.roll_number as org2_roll, o2.year as org2_year,
+        o3.username as org3_name, o3.section as org3_section, o3.sub_role as org3_sub_role, o3.roll_number as org3_roll, o3.year as org3_year,
         a.username as approved_by_name,
         a.section as approved_by_section
       FROM event_forms f
@@ -428,7 +428,7 @@ app.get('/api/forms', authenticateToken, async (req, res) => {
     
     // Fetch participants for all forms
     const partsResult = await db.query(`
-      SELECT fp.form_id, u.id, u.username 
+      SELECT fp.form_id, u.id, u.username, u.section, u.sub_role, u.roll_number, u.year
       FROM form_participants fp 
       JOIN users u ON fp.student_id = u.id
     `);

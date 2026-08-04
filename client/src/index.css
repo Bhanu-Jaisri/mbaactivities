@@ -463,9 +463,9 @@ th {
   body {
     background: white !important;
     color: black !important;
-    font-size: 12pt;
+    font-size: 11pt;
   }
-  .nav-bar, .hide-on-print {
+  .nav-bar, .hide-on-print, .modal-overlay-header {
     display: none !important;
   }
   .no-print {
@@ -489,13 +489,31 @@ th {
     border: 1px solid #000;
     color: black !important;
     background: transparent !important;
-    font-size: 11pt;
+    font-size: 10pt;
   }
   .print-target h3 {
-    font-size: 20pt !important;
+    font-size: 18pt !important;
     border-bottom: 2px solid black;
     padding-bottom: 0.5rem;
     margin-bottom: 1rem;
+  }
+  .modal-overlay {
+    position: static !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+  }
+  .glass-panel {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    backdrop-filter: none !important;
+  }
+  .batch-print-wrapper {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
   }
   * {
     color: black !important;
