@@ -38,17 +38,61 @@ const isAssociationAligned = (creatorSubRole, userSubRole) => {
   return false;
 };
 
+const normalizeDate = (dateStr) => {
+  if (!dateStr) return '';
+  const str = String(dateStr).trim();
+
+  // Handle ISO string or Date string like 2026-08-09T00:00:00.000Z
+  if (str.includes('T')) {
+    return str.split('T')[0];
+  }
+
+  // YYYY-MM-DD or YYYY-M-D
+  if (str.includes('-')) {
+    const parts = str.split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else if (parts[2].length === 4) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+  }
+
+  // MM/DD/YYYY or M/D/YYYY or DD/MM/YYYY
+  if (str.includes('/')) {
+    const parts = str.split('/');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else if (parts[2].length === 4) {
+        let p1 = parseInt(parts[0], 10);
+        let p2 = parseInt(parts[1], 10);
+        if (p1 > 12) {
+          return `${parts[2]}-${String(p2).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+        } else {
+          return `${parts[2]}-${String(p1).padStart(2, '0')}-${String(p2).padStart(2, '0')}`;
+        }
+      }
+    }
+  }
+
+  return str;
+};
+
 const checkStudentConflict = async (eventDate, studentIds, ignoreFormId = null) => {
   if (!eventDate || !studentIds || studentIds.length === 0) return null;
 
   const validIds = studentIds.filter(id => id != null);
   if (validIds.length === 0) return null;
 
+  const targetDate = normalizeDate(eventDate);
+
   const query = `
     SELECT f.id, f.event_name, f.event_date, u.username, u.id as student_id, 'Organizer' as role_type
     FROM event_forms f
     JOIN users u ON u.id IN (f.organizer_1, f.organizer_2, f.organizer_3)
-    WHERE f.event_date = $1 AND u.id = ANY($2) ${ignoreFormId ? 'AND f.id <> $3' : ''}
+    WHERE (f.is_completed IS FALSE OR f.is_completed IS NULL) ${ignoreFormId ? 'AND f.id <> $1' : ''}
     
     UNION ALL
     
@@ -56,15 +100,111 @@ const checkStudentConflict = async (eventDate, studentIds, ignoreFormId = null) 
     FROM event_forms f
     JOIN form_participants fp ON f.id = fp.form_id
     JOIN users u ON fp.student_id = u.id
-    WHERE f.event_date = $1 AND u.id = ANY($2) ${ignoreFormId ? 'AND f.id <> $3' : ''}
+    WHERE (f.is_completed IS FALSE OR f.is_completed IS NULL) ${ignoreFormId ? 'AND f.id <> $1' : ''}
   `;
 
-  const params = ignoreFormId ? [eventDate, validIds, ignoreFormId] : [eventDate, validIds];
+  const params = ignoreFormId ? [ignoreFormId] : [];
   const result = await db.query(query, params);
 
-  if (result.rows.length > 0) {
-    return result.rows[0];
+  for (const row of result.rows) {
+    if (validIds.includes(row.student_id) && normalizeDate(row.event_date) === targetDate) {
+      return row;
+    }
   }
+
+  return null;
+};
+
+const parseTimeToMinutes = (timeStr) => {
+  if (!timeStr) return null;
+  const str = timeStr.trim().toUpperCase();
+  const isPM = str.includes('PM');
+  const isAM = str.includes('AM');
+  if (!isPM && !isAM) return null;
+
+  const clean = str.replace('AM', '').replace('PM', '').trim();
+  let hour = 0;
+  let minute = 0;
+
+  if (clean.includes(':')) {
+    const p = clean.split(':');
+    hour = parseInt(p[0], 10);
+    minute = parseInt(p[1], 10) || 0;
+  } else if (clean.includes('.')) {
+    const p = clean.split('.');
+    hour = parseInt(p[0], 10);
+    minute = parseInt(p[1], 10) || 0;
+  } else {
+    hour = parseInt(clean, 10);
+  }
+
+  if (isNaN(hour) || isNaN(minute)) return null;
+
+  if (isPM && hour < 12) hour += 12;
+  if (isAM && hour === 12) hour = 0;
+
+  return hour * 60 + minute;
+};
+
+const parseEventTimeRange = (eventTimeStr) => {
+  if (!eventTimeStr) return null;
+  let str = eventTimeStr.trim();
+  let parts = [];
+  if (str.includes(' - ')) {
+    parts = str.split(' - ');
+  } else if (str.includes('-')) {
+    parts = str.split('-');
+  } else if (str.toLowerCase().includes(' to ')) {
+    parts = str.toLowerCase().split(' to ');
+  }
+
+  if (parts.length >= 2) {
+    const start = parseTimeToMinutes(parts[0]);
+    const end = parseTimeToMinutes(parts[1]);
+    if (start !== null && end !== null) {
+      return { start, end };
+    }
+  }
+  const single = parseTimeToMinutes(str);
+  if (single !== null) {
+    return { start: single, end: single + 60 };
+  }
+  return null;
+};
+
+const checkEventTimeConflict = async (eventDate, eventTime, ignoreFormId = null) => {
+  if (!eventDate || !eventTime) return null;
+
+  const targetDate = normalizeDate(eventDate);
+  const newRange = parseEventTimeRange(eventTime);
+
+  const query = `
+    SELECT id, event_name, event_date, event_time
+    FROM event_forms
+    WHERE (is_completed IS FALSE OR is_completed IS NULL)
+    ${ignoreFormId ? 'AND id <> $1' : ''}
+  `;
+  const params = ignoreFormId ? [ignoreFormId] : [];
+  const result = await db.query(query, params);
+
+  for (const row of result.rows) {
+    if (!row.event_date || !row.event_time) continue;
+
+    const rowDate = normalizeDate(row.event_date);
+    if (rowDate !== targetDate) continue;
+
+    const existingRange = parseEventTimeRange(row.event_time);
+    if (newRange && existingRange) {
+      if (newRange.start < existingRange.end && existingRange.start < newRange.end) {
+        return row;
+      }
+    } else {
+      if (row.event_time.trim().toLowerCase() === eventTime.trim().toLowerCase()) {
+        return row;
+      }
+    }
+  }
+
   return null;
 };
 
@@ -338,6 +478,13 @@ app.post('/api/users/bulk-delete', authenticateToken, async (req, res) => {
 app.post('/api/forms', authenticateToken, authorizeSubRole('Secretary'), async (req, res) => {
   const { event_name, organizer_1, organizer_2, organizer_3, event_date, event_time, created_date } = req.body;
   try {
+    const timeConflict = await checkEventTimeConflict(event_date, event_time);
+    if (timeConflict) {
+      return res.status(400).json({
+        error: `Another event "${timeConflict.event_name}" is already scheduled on ${event_date} at ${timeConflict.event_time}. An event cannot be scheduled at the same date and time.`
+      });
+    }
+
     const conflict = await checkStudentConflict(event_date, [organizer_1, organizer_2, organizer_3]);
     if (conflict) {
       return res.status(400).json({
@@ -422,7 +569,7 @@ app.get('/api/forms', authenticateToken, async (req, res) => {
       LEFT JOIN users o2 ON f.organizer_2 = o2.id
       LEFT JOIN users o3 ON f.organizer_3 = o3.id
       LEFT JOIN users a ON f.approved_by = a.id
-      ORDER BY f.created_at DESC
+      ORDER BY f.event_date ASC, f.event_time ASC, f.created_at ASC
     `;
     const formsResult = await db.query(query);
     
@@ -517,6 +664,13 @@ app.put('/api/forms/:id/datetime', authenticateToken, async (req, res) => {
     const participantIds = partsRes.rows.map(r => r.student_id);
     const allStudentIds = [form.organizer_1, form.organizer_2, form.organizer_3, ...participantIds].filter(oid => oid != null);
 
+    const timeConflict = await checkEventTimeConflict(event_date, event_time, id);
+    if (timeConflict) {
+      return res.status(400).json({
+        error: `Another event "${timeConflict.event_name}" is already scheduled on ${event_date} at ${timeConflict.event_time}. An event cannot be scheduled at the same date and time.`
+      });
+    }
+
     const conflict = await checkStudentConflict(event_date, allStudentIds, id);
     if (conflict) {
       return res.status(400).json({
@@ -594,24 +748,23 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 } // 25MB limit
 });
 
-// Upload PPT (Organizers only)
-app.put('/api/forms/:id/ppt', authenticateToken, authorizeRole('Student'), upload.single('ppt'), async (req, res) => {
+// Upload PPT (Organizers, Creator Secretary, Aligned Executive, Staff/Admin)
+app.put('/api/forms/:id/ppt', authenticateToken, upload.single('ppt'), async (req, res) => {
   const { id } = req.params;
   try {
-    const formCheck = await db.query('SELECT status, organizer_1, organizer_2, organizer_3, ppt_filename FROM event_forms WHERE id = $1', [id]);
+    const formCheck = await db.query('SELECT f.status, f.is_completed, f.organizer_1, f.organizer_2, f.organizer_3, f.created_by, f.ppt_filename, u.sub_role as creator_sub_role FROM event_forms f LEFT JOIN users u ON f.created_by = u.id WHERE f.id = $1', [id]);
     if (formCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Form not found' });
     }
     
     const form = formCheck.rows[0];
-    if (form.status === 'Approved') {
-      return res.status(403).json({ error: 'Cannot upload PPT to an approved form' });
+    if (form.is_completed) {
+      return res.status(403).json({ error: 'Cannot upload PPT to a completed form' });
     }
 
-    // Check if user is organizer
     const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
     if (!isOrganizer) {
-      return res.status(403).json({ error: 'Only organizers can upload PPT' });
+      return res.status(403).json({ error: 'Only assigned organizers of this event can upload or update the PPT.' });
     }
 
     if (!req.file) {
@@ -680,15 +833,22 @@ app.put('/api/forms/:id/status', authenticateToken, async (req, res) => {
     }
 
     const form = formCheck.rows[0];
+    const participantCount = parseInt(form.participant_count, 10) || 0;
+    const hasPpt = Boolean(form.ppt_filename && form.ppt_filename.trim() !== '');
+
     if (
       !form.event_name || form.event_name.trim() === '' ||
       !form.organizer_1 ||
-      !form.ppt_filename || form.ppt_filename.trim() === '' ||
-      !form.round_1_details || form.round_1_details.trim() === '' ||
-      parseInt(form.participant_count) === 0
+      !form.round_1_details || form.round_1_details.trim() === ''
     ) {
       return res.status(400).json({
-        error: 'Cannot approve or reject: All event details (Event name, Round 1 details, PPT file, and saved participants) must be filled out.'
+        error: 'Cannot approve or reject: Basic event details (Event name, Organizer 1, and Round 1 details) must be filled out.'
+      });
+    }
+
+    if (status === 'Approved' && participantCount > 0 && !hasPpt) {
+      return res.status(400).json({
+        error: 'PPT is required to approve this event form because participants are added.'
       });
     }
 

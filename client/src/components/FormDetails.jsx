@@ -3,6 +3,43 @@ import api from '../api';
 import { useAuth } from '../AuthContext';
 import { CheckCircle, XCircle, Edit3, Users, Printer, Trash2 } from 'lucide-react';
 
+const parseTimeToMinutes = (timeStr) => {
+  if (!timeStr) return 0;
+  const startTime = timeStr.split('-')[0].trim();
+  const match = startTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!match) return 0;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const ampm = match[3].toUpperCase();
+
+  if (ampm === 'PM' && hours < 12) hours += 12;
+  if (ampm === 'AM' && hours === 12) hours = 0;
+
+  return hours * 60 + minutes;
+};
+
+const sortFormsAscending = (formList) => {
+  if (!Array.isArray(formList)) return [];
+  return [...formList].sort((a, b) => {
+    // 1. Compare Event Date ASC
+    const dateA = a.event_date ? new Date(a.event_date).getTime() : 0;
+    const dateB = b.event_date ? new Date(b.event_date).getTime() : 0;
+    if (dateA !== dateB) {
+      return dateA - dateB;
+    }
+    // 2. Compare Event Time ASC
+    const timeA = parseTimeToMinutes(a.event_time);
+    const timeB = parseTimeToMinutes(b.event_time);
+    if (timeA !== timeB) {
+      return timeA - timeB;
+    }
+    // 3. Compare Created Date ASC
+    const createdA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const createdB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return createdA - createdB;
+  });
+};
+
 const FormDetails = () => {
   const { user } = useAuth();
   const [forms, setForms] = useState([]);
@@ -19,9 +56,12 @@ const FormDetails = () => {
   const [viewingForm, setViewingForm] = useState(null);
   const [editingDateTime, setEditingDateTime] = useState(null);
   const [editEventDate, setEditEventDate] = useState('');
-  const [editTimeHour, setEditTimeHour] = useState('10');
-  const [editTimeMinute, setEditTimeMinute] = useState('00');
-  const [editTimeAmpm, setEditTimeAmpm] = useState('AM');
+  const [editStartHour, setEditStartHour] = useState('10');
+  const [editStartMinute, setEditStartMinute] = useState('00');
+  const [editStartAmpm, setEditStartAmpm] = useState('AM');
+  const [editEndHour, setEditEndHour] = useState('11');
+  const [editEndMinute, setEditEndMinute] = useState('30');
+  const [editEndAmpm, setEditEndAmpm] = useState('AM');
 
   const [editingParticipants, setEditingParticipants] = useState(null);
   const [selectedParticipants, setSelectedParticipants] = useState([]);
@@ -32,6 +72,8 @@ const FormDetails = () => {
   // Rejection/Resubmit State
   const [rejectingFormId, setRejectingFormId] = useState(null);
   const [rejectionQueries, setRejectionQueries] = useState('');
+
+  const [singlePrintForm, setSinglePrintForm] = useState(null);
 
   const [activeTab, setActiveTab] = useState('active');
   const [filterDate, setFilterDate] = useState('');
@@ -220,29 +262,56 @@ const FormDetails = () => {
     setEditingDateTime(form.id);
     setEditEventDate(form.event_date || '');
     if (form.event_time) {
-      const parts = form.event_time.split(' ');
-      if (parts.length === 2) {
-        const timeParts = parts[0].split(':');
-        if (timeParts.length === 2) {
-          setEditTimeHour(timeParts[0]);
-          setEditTimeMinute(timeParts[1]);
+      const rangeParts = form.event_time.split(' - ');
+      if (rangeParts.length === 2) {
+        // Parse Start Time
+        const sParts = rangeParts[0].trim().split(' ');
+        if (sParts.length === 2) {
+          const t = sParts[0].split(':');
+          if (t.length === 2) {
+            setEditStartHour(t[0]);
+            setEditStartMinute(t[1]);
+          }
+          setEditStartAmpm(sParts[1]);
         }
-        setEditTimeAmpm(parts[1]);
+        // Parse End Time
+        const eParts = rangeParts[1].trim().split(' ');
+        if (eParts.length === 2) {
+          const t = eParts[0].split(':');
+          if (t.length === 2) {
+            setEditEndHour(t[0]);
+            setEditEndMinute(t[1]);
+          }
+          setEditEndAmpm(eParts[1]);
+        }
       } else {
-        setEditTimeHour('10');
-        setEditTimeMinute('00');
-        setEditTimeAmpm('AM');
+        // Fallback single time
+        const sParts = form.event_time.trim().split(' ');
+        if (sParts.length === 2) {
+          const t = sParts[0].split(':');
+          if (t.length === 2) {
+            setEditStartHour(t[0]);
+            setEditStartMinute(t[1]);
+          }
+          setEditStartAmpm(sParts[1]);
+          setEditEndAmpm(sParts[1]);
+        }
+        setEditEndHour('11');
+        setEditEndMinute('30');
       }
     } else {
-      setEditTimeHour('10');
-      setEditTimeMinute('00');
-      setEditTimeAmpm('AM');
+      setEditStartHour('10');
+      setEditStartMinute('00');
+      setEditStartAmpm('AM');
+      setEditEndHour('11');
+      setEditEndMinute('30');
+      setEditEndAmpm('AM');
     }
   };
 
   const saveDateTime = async (formId) => {
     try {
-      const eventTimeStr = `${editTimeHour}:${editTimeMinute} ${editTimeAmpm}`;
+      const eventTimeStr = `${editStartHour}:${editStartMinute} ${editStartAmpm} - ${editEndHour}:${editEndMinute} ${editEndAmpm}`;
       await api.put(`/forms/${formId}/datetime`, {
         event_date: editEventDate,
         event_time: eventTimeStr
@@ -274,7 +343,7 @@ const FormDetails = () => {
   const fetchForms = async () => {
     try {
       const res = await api.get('/forms');
-      setForms(res.data);
+      setForms(sortFormsAscending(res.data));
     } catch (err) {
       console.error(err);
     }
@@ -557,24 +626,42 @@ const FormDetails = () => {
     return [form.organizer_1, form.organizer_2, form.organizer_3].includes(user.id);
   };
 
+  const canEditPpt = (form) => {
+    if (!form || form.is_completed) return false;
+    return isOrganizer(form);
+  };
+
+  const shouldShowPpt = (form) => {
+    if (!form) return false;
+    if (user.role === 'Admin' || user.role === 'Staff') return true;
+    if (isOrganizer(form)) return true;
+    const sub = (user.sub_role || '').toLowerCase();
+    if (user.role === 'Student' && (sub.includes('secret') || sub.includes('secert') || sub.includes('exec'))) {
+      return true;
+    }
+    return false;
+  };
+
   const isFormComplete = (form) => {
-    return (
-      form.event_name && form.event_name.trim() !== '' &&
-      form.organizer_1 &&
-      form.ppt_filename && form.ppt_filename.trim() !== '' &&
-      form.round_1_details && form.round_1_details.trim() !== '' &&
-      form.participants && form.participants.length > 0
-    );
+    if (!form || !form.event_name || !form.organizer_1 || !form.round_1_details) {
+      return false;
+    }
+    const hasParticipants = form.participants && form.participants.length > 0;
+    if (hasParticipants) {
+      return Boolean(form.ppt_filename && form.ppt_filename.trim() !== '');
+    }
+    return true;
   };
 
   const toggleExpand = (formId) => {
     setExpandedForms(prev => prev.includes(formId) ? prev.filter(id => id !== formId) : [...prev, formId]);
   };
 
-  const handlePrint = (formId) => {
-    fetchAgenda();
-    setSelectedBatchFormIds([formId]);
-    setShowBatchModal(true);
+  const handlePrint = (formOrId) => {
+    const targetForm = typeof formOrId === 'object' ? formOrId : forms.find(f => f.id === formOrId);
+    if (targetForm) {
+      setSinglePrintForm(targetForm);
+    }
   };
 
   const canDeleteForm = (form) => {
@@ -598,29 +685,31 @@ const FormDetails = () => {
     }
   };
 
-  const filteredForms = forms.filter(form => {
-    // 1. Tab check
-    const matchesTab = activeTab === 'completed' ? form.is_completed : !form.is_completed;
-    if (!matchesTab) return false;
+  const filteredForms = sortFormsAscending(
+    forms.filter(form => {
+      // 1. Tab check
+      const matchesTab = activeTab === 'completed' ? form.is_completed : !form.is_completed;
+      if (!matchesTab) return false;
 
-    // Restrict access to completed forms to Staff/Admin only
-    if (activeTab === 'completed' && user.role !== 'Staff' && user.role !== 'Admin') {
-      return false;
-    }
+      // Restrict access to completed forms to Staff/Admin only
+      if (activeTab === 'completed' && user.role !== 'Staff' && user.role !== 'Admin') {
+        return false;
+      }
 
-    // 2. Date check
-    if (filterDate) {
-      const formDate = new Date(form.created_at);
-      const selectedDate = new Date(filterDate);
-      const isSameDay =
-        formDate.getFullYear() === selectedDate.getFullYear() &&
-        formDate.getMonth() === selectedDate.getMonth() &&
-        formDate.getDate() === selectedDate.getDate();
-      if (!isSameDay) return false;
-    }
+      // 2. Date check
+      if (filterDate) {
+        const formDate = new Date(form.created_at);
+        const selectedDate = new Date(filterDate);
+        const isSameDay =
+          formDate.getFullYear() === selectedDate.getFullYear() &&
+          formDate.getMonth() === selectedDate.getMonth() &&
+          formDate.getDate() === selectedDate.getDate();
+        if (!isSameDay) return false;
+      }
 
-    return true;
-  });
+      return true;
+    })
+  );
 
   const limit = parseInt(pageSize, 10) || 10;
 
@@ -859,7 +948,16 @@ const FormDetails = () => {
                           />
                         </td>
                       )}
-                      <td style={{ padding: '1rem' }}>{form.event_date ? new Date(form.event_date).toLocaleDateString() : 'N/A'}</td>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{ fontWeight: 500 }}>
+                          {form.event_date ? new Date(form.event_date).toLocaleDateString() : 'N/A'}
+                        </div>
+                        {form.event_time && (
+                          <div style={{ fontSize: '0.8rem', color: 'var(--primary-hover)', marginTop: '0.25rem', fontWeight: 500 }}>
+                            ⏰ {form.event_time}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ padding: '1rem', fontWeight: 500 }}>{form.event_name}</td>
                       <td style={{ padding: '1rem' }}>
                         <span className="association-badge" style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '500', background: 'rgba(99, 102, 241, 0.15)', color: '#818CF8' }}>
@@ -1087,13 +1185,13 @@ const FormDetails = () => {
                     required
                   />
                 </div>
-                <div style={{ marginBottom: '1rem' }}>
-                  <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem' }}>Event Time *</label>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem' }}>Event Start Time *</label>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <select
                       className="select"
-                      value={editTimeHour}
-                      onChange={e => setEditTimeHour(e.target.value)}
+                      value={editStartHour}
+                      onChange={e => setEditStartHour(e.target.value)}
                       style={{ flex: 1, padding: '0.5rem', background: 'var(--input-bg)', border: '1px solid var(--surface-border)', color: 'var(--text)', borderRadius: '4px' }}
                     >
                       {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
@@ -1102,8 +1200,8 @@ const FormDetails = () => {
                     </select>
                     <select
                       className="select"
-                      value={editTimeMinute}
-                      onChange={e => setEditTimeMinute(e.target.value)}
+                      value={editStartMinute}
+                      onChange={e => setEditStartMinute(e.target.value)}
                       style={{ flex: 1, padding: '0.5rem', background: 'var(--input-bg)', border: '1px solid var(--surface-border)', color: 'var(--text)', borderRadius: '4px' }}
                     >
                       {Array.from({ length: 60 }, (_, i) => i).map(m => (
@@ -1112,8 +1210,42 @@ const FormDetails = () => {
                     </select>
                     <select
                       className="select"
-                      value={editTimeAmpm}
-                      onChange={e => setEditTimeAmpm(e.target.value)}
+                      value={editStartAmpm}
+                      onChange={e => setEditStartAmpm(e.target.value)}
+                      style={{ flex: 1, padding: '0.5rem', background: 'var(--input-bg)', border: '1px solid var(--surface-border)', color: 'var(--text)', borderRadius: '4px' }}
+                    >
+                      <option value="AM">AM</option>
+                      <option value="PM">PM</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem' }}>Event End Time *</label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <select
+                      className="select"
+                      value={editEndHour}
+                      onChange={e => setEditEndHour(e.target.value)}
+                      style={{ flex: 1, padding: '0.5rem', background: 'var(--input-bg)', border: '1px solid var(--surface-border)', color: 'var(--text)', borderRadius: '4px' }}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
+                        <option key={h} value={h.toString().padStart(2, '0')}>{h.toString().padStart(2, '0')}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="select"
+                      value={editEndMinute}
+                      onChange={e => setEditEndMinute(e.target.value)}
+                      style={{ flex: 1, padding: '0.5rem', background: 'var(--input-bg)', border: '1px solid var(--surface-border)', color: 'var(--text)', borderRadius: '4px' }}
+                    >
+                      {Array.from({ length: 60 }, (_, i) => i).map(m => (
+                        <option key={m} value={m.toString().padStart(2, '0')}>{m.toString().padStart(2, '0')}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="select"
+                      value={editEndAmpm}
+                      onChange={e => setEditEndAmpm(e.target.value)}
                       style={{ flex: 1, padding: '0.5rem', background: 'var(--input-bg)', border: '1px solid var(--surface-border)', color: 'var(--text)', borderRadius: '4px' }}
                     >
                       <option value="AM">AM</option>
@@ -1297,58 +1429,60 @@ const FormDetails = () => {
                 </div>
 
                 {/* Presentation (PPT) Section */}
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>Presentation (PPT)</h4>
-                  {currentViewingForm.ppt_filename ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.5rem 0', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
-                      <span style={{ fontSize: '0.85rem', flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        📄 {currentViewingForm.ppt_original_name || currentViewingForm.ppt_filename}
-                      </span>
-                      <a
-                        href={getPptUrl(currentViewingForm.ppt_filename)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download={currentViewingForm.ppt_original_name || 'presentation.pptx'}
-                        className="btn btn-secondary"
-                        style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none', display: 'inline-block' }}
-                      >
-                        Download
-                      </a>
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0.5rem 0' }}>No PPT uploaded yet.</p>
-                  )}
+                {shouldShowPpt(currentViewingForm) && (
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>Presentation (PPT)</h4>
+                    {currentViewingForm.ppt_filename ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.5rem 0', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
+                        <span style={{ fontSize: '0.85rem', flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                          📄 {currentViewingForm.ppt_original_name || currentViewingForm.ppt_filename}
+                        </span>
+                        <a
+                          href={getPptUrl(currentViewingForm.ppt_filename)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download={currentViewingForm.ppt_original_name || 'presentation.pptx'}
+                          className="btn btn-secondary"
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none', display: 'inline-block' }}
+                        >
+                          Download
+                        </a>
+                      </div>
+                    ) : (
+                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0.5rem 0' }}>No PPT uploaded yet.</p>
+                    )}
 
-                  {isOrganizer(currentViewingForm) && currentViewingForm.status !== 'Approved' && (
-                    <div style={{ marginTop: '0.5rem' }}>
-                      <input
-                        type="file"
-                        accept=".ppt,.pptx"
-                        style={{ display: 'none' }}
-                        id={`modal-ppt-file-input-${currentViewingForm.id}`}
-                        onChange={(e) => handlePptUpload(currentViewingForm.id, e.target.files[0])}
-                        disabled={uploadingFormId === currentViewingForm.id}
-                      />
-                      <label
-                        htmlFor={`modal-ppt-file-input-${currentViewingForm.id}`}
-                        className="btn btn-primary"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.8rem', fontSize: '0.8rem', cursor: 'pointer' }}
-                      >
-                        {uploadingFormId === currentViewingForm.id
-                          ? 'Uploading...'
-                          : currentViewingForm.ppt_filename
-                            ? 'Change PPT'
-                            : 'Upload PPT'}
-                      </label>
-                    </div>
-                  )}
-                </div>
+                    {canEditPpt(currentViewingForm) && (
+                      <div style={{ marginTop: '0.5rem' }}>
+                        <input
+                          type="file"
+                          accept=".ppt,.pptx"
+                          style={{ display: 'none' }}
+                          id={`modal-ppt-file-input-${currentViewingForm.id}`}
+                          onChange={(e) => handlePptUpload(currentViewingForm.id, e.target.files[0])}
+                          disabled={uploadingFormId === currentViewingForm.id}
+                        />
+                        <label
+                          htmlFor={`modal-ppt-file-input-${currentViewingForm.id}`}
+                          className="btn btn-primary"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.8rem', fontSize: '0.8rem', cursor: 'pointer' }}
+                        >
+                          {uploadingFormId === currentViewingForm.id
+                            ? 'Uploading...'
+                            : currentViewingForm.ppt_filename
+                              ? 'Change PPT'
+                              : 'Upload PPT'}
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Approval Actions */}
                 {user.role === 'Student' && (((user.sub_role || '').toLowerCase().includes('secret') || (user.sub_role || '').toLowerCase().includes('secert') || (user.sub_role || '').toLowerCase().includes('exec'))) && isAssociationAligned(currentViewingForm.created_by_sub_role, user.sub_role) && currentViewingForm.status === 'Pending' && (
                   (!isFormComplete(currentViewingForm) || editingParticipants === currentViewingForm.id) ? (
                     <div style={{ marginTop: '1rem', background: 'rgba(245, 158, 11, 0.1)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '0.85rem', color: '#F59E0B' }}>
-                      ⚠ All details (Event Name, Round 1 details, PPT file, and saved Participants) must be completed before you can Approve or Reject.
+                      ⚠ Basic event details (Event Name, Round 1 details, and PPT if participants exist) must be completed before you can Approve or Reject.
                     </div>
                   ) : rejectingFormId === currentViewingForm.id ? (
                     <div style={{ marginTop: '1rem', background: 'rgba(239, 68, 68, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
@@ -1441,7 +1575,7 @@ const FormDetails = () => {
                   </div>
                 </div>
 
-                {currentViewingForm.ppt_filename && (
+                {shouldShowPpt(currentViewingForm) && currentViewingForm.ppt_filename && (
                   <div style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
                     <h4 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Presentation (PPT)</h4>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
@@ -1554,7 +1688,7 @@ const FormDetails = () => {
 
             {/* Printable Preview Area */}
             {(() => {
-              const selectedFormsList = forms.filter(f => selectedBatchFormIds.includes(f.id));
+              const selectedFormsList = sortFormsAscending(forms.filter(f => selectedBatchFormIds.includes(f.id)));
               const { assocType, categories } = getAgendaCategoriesForExport(selectedFormsList);
 
               return (
@@ -1757,6 +1891,241 @@ const FormDetails = () => {
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Modal for Single Event Print */}
+      {singlePrintForm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'var(--modal-overlay, rgba(15, 23, 42, 0.75))',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: '1rem'
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%',
+            maxWidth: '950px',
+            maxHeight: '92vh',
+            overflowY: 'auto',
+            background: 'var(--modal-bg, #ffffff)',
+            color: 'var(--text)',
+            borderRadius: '16px',
+            border: '1px solid var(--surface-border)'
+          }}>
+            {/* Header / Actions (hidden on print) */}
+            <div className="hide-on-print" style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '1.5rem',
+              borderBottom: '1px solid var(--surface-border)',
+              paddingBottom: '1rem'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, color: 'var(--heading-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Printer size={20} style={{ color: 'var(--primary)' }} />
+                  Print Event Details: {singlePrintForm.event_name}
+                </h3>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => window.print()}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  <Printer size={18} /> Print / Save as PDF
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setSinglePrintForm(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Content for Single Event */}
+            <div className="batch-print-wrapper" style={{
+              background: 'white',
+              color: 'black',
+              padding: '2.5rem',
+              borderRadius: '12px'
+            }}>
+              {/* College Header */}
+              <div style={{ textAlign: 'center', borderBottom: '2.5px solid black', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <h1 style={{ fontSize: '18pt', fontWeight: 'bold', color: 'black', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Mepco Schlenk Engineering College (Autonomous)
+                </h1>
+                <h2 style={{ fontSize: '11pt', fontWeight: '600', color: '#1e293b', margin: '0.35rem 0' }}>
+                  Sivakasi, Tamilnadu, India - 626005 | Mepco School of Management Studies
+                </h2>
+                <h3 style={{ fontSize: '13pt', fontWeight: 'bold', color: '#1e40af', margin: '0.5rem 0 0 0', textDecoration: 'underline' }}>
+                  EVENT REPORT
+                </h3>
+              </div>
+
+              {/* Event Basic Info */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1.5rem', border: '1px solid black', fontSize: '9.5pt', color: 'black' }}>
+                <tbody>
+                  <tr style={{ borderBottom: '1px solid black' }}>
+                    <td style={{ padding: '0.5rem', width: '20%', fontWeight: 'bold', background: '#f1f5f9', borderRight: '1px solid black' }}>Event Name</td>
+                    <td style={{ padding: '0.5rem', width: '80%', fontWeight: 'bold' }}>{singlePrintForm.event_name}</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid black' }}>
+                    <td style={{ padding: '0.5rem', fontWeight: 'bold', background: '#f1f5f9', borderRight: '1px solid black' }}>Event Date & Time</td>
+                    <td style={{ padding: '0.5rem' }}>
+                      {singlePrintForm.event_date ? new Date(singlePrintForm.event_date).toLocaleDateString() : 'N/A'} {singlePrintForm.event_time ? ` (${singlePrintForm.event_time})` : ''}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '0.5rem', fontWeight: 'bold', background: '#f1f5f9', borderRight: '1px solid black', verticalAlign: 'top' }}>Event Organizers</td>
+                    <td style={{ padding: '0.5rem' }}>
+                      {(() => {
+                        const orgs = [
+                          { name: singlePrintForm.org1_name, roll: singlePrintForm.org1_roll, year: singlePrintForm.org1_year, sec: singlePrintForm.org1_section },
+                          { name: singlePrintForm.org2_name, roll: singlePrintForm.org2_roll, year: singlePrintForm.org2_year, sec: singlePrintForm.org2_section },
+                          { name: singlePrintForm.org3_name, roll: singlePrintForm.org3_roll, year: singlePrintForm.org3_year, sec: singlePrintForm.org3_section }
+                        ].filter(o => Boolean(o.name));
+
+                        if (orgs.length === 0) return 'N/A';
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                            {orgs.map((org, i) => (
+                              <div key={i}>
+                                <strong>{i + 1}. {org.name}</strong> {org.roll ? `(Roll No: ${org.roll})` : ''} - {org.year || '1st Year'}, Sec {org.sec || 'A'}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* Rounds Table */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <h4 style={{ fontSize: '11pt', fontWeight: 'bold', color: 'black', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                  Rounds Details
+                </h4>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9.5pt', color: 'black', border: '1px solid black' }}>
+                  <thead>
+                    <tr style={{ background: '#f1f5f9', borderBottom: '1.5px solid black' }}>
+                      <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left', width: '33.33%' }}>Round 1</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left', width: '33.33%' }}>Round 2</th>
+                      <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left', width: '33.33%' }}>Round 3</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ padding: '0.5rem', border: '1px solid black', verticalAlign: 'top' }}>{singlePrintForm.round_1_details || 'N/A'}</td>
+                      <td style={{ padding: '0.5rem', border: '1px solid black', verticalAlign: 'top' }}>{singlePrintForm.round_2_details || 'N/A'}</td>
+                      <td style={{ padding: '0.5rem', border: '1px solid black', verticalAlign: 'top' }}>{singlePrintForm.round_3_details || 'N/A'}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Participants Table (Only rendered if form has participants) */}
+              {singlePrintForm.participants && singlePrintForm.participants.length > 0 && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h4 style={{ fontSize: '11pt', fontWeight: 'bold', color: 'black', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                    Participants ({singlePrintForm.participants.length})
+                  </h4>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9.5pt', color: 'black', border: '1px solid black' }}>
+                    <thead>
+                      <tr style={{ background: '#f1f5f9', borderBottom: '1.5px solid black' }}>
+                        <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center', width: '40px' }}>S.No</th>
+                        <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left' }}>Participant Name</th>
+                        <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left', width: '140px' }}>Roll Number</th>
+                        <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center', width: '90px' }}>Year</th>
+                        <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center', width: '80px' }}>Section</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {singlePrintForm.participants.map((p, index) => (
+                        <tr key={p.id || index} style={{ borderBottom: '1px solid black' }}>
+                          <td style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center' }}>{index + 1}</td>
+                          <td style={{ padding: '0.5rem', border: '1px solid black', fontWeight: '500' }}>{p.username || p.name || 'N/A'}</td>
+                          <td style={{ padding: '0.5rem', border: '1px solid black' }}>{p.roll_no || p.username || 'N/A'}</td>
+                          <td style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center' }}>{p.year || '1st Year'}</td>
+                          <td style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center' }}>{p.section || 'A'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Outcomes Box (Empty Box) */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h4 style={{ fontSize: '11pt', fontWeight: 'bold', color: 'black', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                  Outcomes
+                </h4>
+                <div style={{
+                  border: '1px solid black',
+                  minHeight: '100px',
+                  padding: '0.75rem',
+                  fontSize: '9.5pt',
+                  color: 'black',
+                  background: 'white',
+                  borderRadius: '4px'
+                }}>
+                  {singlePrintForm.outcomes || null}
+                </div>
+              </div>
+
+              {/* 4 Signatures Block: Event Organizer, Executive Council, Secretary, Faculty Advisor */}
+              <div style={{
+                marginTop: '3.5rem',
+                paddingTop: '1rem',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '1rem',
+                alignItems: 'flex-end',
+                pageBreakInside: 'avoid'
+              }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ borderBottom: '1.5px solid black', height: '35px', marginBottom: '0.5rem' }}></div>
+                  <div style={{ fontSize: '9pt', fontWeight: 'bold', color: 'black' }}>
+                    Event Organizer
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ borderBottom: '1.5px solid black', height: '35px', marginBottom: '0.5rem' }}></div>
+                  <div style={{ fontSize: '9pt', fontWeight: 'bold', color: 'black' }}>
+                    Executive Council
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ borderBottom: '1.5px solid black', height: '35px', marginBottom: '0.5rem' }}></div>
+                  <div style={{ fontSize: '9pt', fontWeight: 'bold', color: 'black' }}>
+                    Secretary
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ borderBottom: '1.5px solid black', height: '35px', marginBottom: '0.5rem' }}></div>
+                  <div style={{ fontSize: '9pt', fontWeight: 'bold', color: 'black' }}>
+                    Faculty Advisor
+                  </div>
+                </div>
+              </div>
+
+            </div>
           </div>
         </div>
       )}

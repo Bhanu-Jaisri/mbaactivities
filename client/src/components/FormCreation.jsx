@@ -8,9 +8,13 @@ const FormCreation = () => {
   const [org2, setOrg2] = useState('');
   const [org3, setOrg3] = useState('');
   const [eventDate, setEventDate] = useState('');
-  const [timeHour, setTimeHour] = useState('10');
-  const [timeMinute, setTimeMinute] = useState('00');
-  const [timeAmpm, setTimeAmpm] = useState('AM');
+  const [startTimeHour, setStartTimeHour] = useState('10');
+  const [startTimeMinute, setStartTimeMinute] = useState('00');
+  const [startTimeAmpm, setStartTimeAmpm] = useState('AM');
+
+  const [endTimeHour, setEndTimeHour] = useState('11');
+  const [endTimeMinute, setEndTimeMinute] = useState('30');
+  const [endTimeAmpm, setEndTimeAmpm] = useState('AM');
   
   // Organizer Filter States
   const [org1Year, setOrg1Year] = useState('');
@@ -66,7 +70,7 @@ const FormCreation = () => {
     if (org2 && !org2Id) return alert('Organizer 2 not found. Please check the roll number.');
     if (org3 && !org3Id) return alert('Organizer 3 not found. Please check the roll number.');
 
-    const eventTime = `${timeHour}:${timeMinute} ${timeAmpm}`;
+    const eventTime = `${startTimeHour}:${startTimeMinute} ${startTimeAmpm} - ${endTimeHour}:${endTimeMinute} ${endTimeAmpm}`;
 
     try {
       await api.post('/forms', {
@@ -99,19 +103,39 @@ const FormCreation = () => {
         </div>
 
         <div className="input-group">
-          <label>Event Time *</label>
+          <label>Event Start Time *</label>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={timeHour} onChange={e => setTimeHour(e.target.value)}>
+            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={startTimeHour} onChange={e => setStartTimeHour(e.target.value)}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
                 <option key={h} value={h.toString().padStart(2, '0')}>{h.toString().padStart(2, '0')}</option>
               ))}
             </select>
-            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={timeMinute} onChange={e => setTimeMinute(e.target.value)}>
+            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={startTimeMinute} onChange={e => setStartTimeMinute(e.target.value)}>
               {Array.from({ length: 60 }, (_, i) => i).map(m => (
                 <option key={m} value={m.toString().padStart(2, '0')}>{m.toString().padStart(2, '0')}</option>
               ))}
             </select>
-            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={timeAmpm} onChange={e => setTimeAmpm(e.target.value)}>
+            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={startTimeAmpm} onChange={e => setStartTimeAmpm(e.target.value)}>
+              <option value="AM">AM</option>
+              <option value="PM">PM</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="input-group">
+          <label>Event End Time *</label>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={endTimeHour} onChange={e => setEndTimeHour(e.target.value)}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
+                <option key={h} value={h.toString().padStart(2, '0')}>{h.toString().padStart(2, '0')}</option>
+              ))}
+            </select>
+            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={endTimeMinute} onChange={e => setEndTimeMinute(e.target.value)}>
+              {Array.from({ length: 60 }, (_, i) => i).map(m => (
+                <option key={m} value={m.toString().padStart(2, '0')}>{m.toString().padStart(2, '0')}</option>
+              ))}
+            </select>
+            <select className="select" style={{ flex: 1, padding: '0.5rem' }} value={endTimeAmpm} onChange={e => setEndTimeAmpm(e.target.value)}>
               <option value="AM">AM</option>
               <option value="PM">PM</option>
             </select>
