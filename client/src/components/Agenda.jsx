@@ -228,15 +228,7 @@ const Agenda = () => {
               <Trash2 size={18} /> Delete Selected ({selectedIds.length})
             </button>
           )}
-          {isStaffOrAdmin && (
-            <button 
-              className="btn btn-secondary"
-              onClick={handleLoadStandardTemplate}
-              style={{ border: 'none', background: 'rgba(59, 130, 246, 0.1)', color: '#93C5FD', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-            >
-              Load Standard Template
-            </button>
-          )}
+
           {isStaffOrAdmin && !showAddForm && (
             <button 
               className="btn btn-primary" 

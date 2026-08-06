@@ -351,6 +351,62 @@ app.post('/api/users', authenticateToken, async (req, res) => {
   }
 });
 
+app.post('/api/users/bulk', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'Staff' && req.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Only Staff and Admins can import students' });
+  }
+
+  const { students } = req.body;
+  if (!Array.isArray(students) || students.length === 0) {
+    return res.status(400).json({ error: 'No students provided for import' });
+  }
+
+  let importedCount = 0;
+  let skippedCount = 0;
+  const errors = [];
+
+  for (const s of students) {
+    const username = (s.username || '').trim();
+    const roll_number = (s.roll_number || '').trim();
+    const section = (s.section || 'A').trim();
+    const year = (s.year || '1st Year').trim();
+    const sub_role = s.sub_role || 'Regular';
+    const role = 'Student';
+    const password = s.password || roll_number;
+
+    if (!username || !roll_number) {
+      skippedCount++;
+      errors.push(`Skipped row with missing roll number or name`);
+      continue;
+    }
+
+    try {
+      await db.query(
+        `INSERT INTO users (username, password_hash, role, sub_role, roll_number, section, year)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (roll_number) DO UPDATE SET
+           username = EXCLUDED.username,
+           password_hash = EXCLUDED.password_hash,
+           section = EXCLUDED.section,
+           year = EXCLUDED.year,
+           sub_role = EXCLUDED.sub_role`,
+        [username, password, role, sub_role, roll_number, section, year]
+      );
+      importedCount++;
+    } catch (err) {
+      skippedCount++;
+      errors.push(`Error adding ${roll_number} (${username}): ${err.message}`);
+    }
+  }
+
+  res.json({
+    message: `Successfully imported ${importedCount} student(s). ${skippedCount > 0 ? `Skipped ${skippedCount}.` : ''}`,
+    importedCount,
+    skippedCount,
+    errors
+  });
+});
+
 app.put('/api/users/promote-first-year', authenticateToken, async (req, res) => {
   if (req.user.role !== 'Staff' && req.user.role !== 'Admin') {
     return res.status(403).json({ error: 'Only Staff/Admin can promote students' });
@@ -405,40 +461,44 @@ app.delete('/api/users/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Update individual user details (e.g. username)
+// Update individual user details (e.g. username, sub_role, section, year)
 app.put('/api/users/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { username } = req.body;
+  const { username, sub_role, section, year } = req.body;
 
   if (!username || username.trim() === '') {
     return res.status(400).json({ error: 'Username is required' });
   }
 
   try {
-    const targetUserRes = await db.query('SELECT role FROM users WHERE id = $1', [id]);
+    const targetUserRes = await db.query('SELECT role, sub_role, section, year FROM users WHERE id = $1', [id]);
     if (targetUserRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    const targetRole = targetUserRes.rows[0].role;
+    const targetUser = targetUserRes.rows[0];
 
     // Admin can edit Staff/Students. Staff can edit Students.
-    if (targetRole === 'Student' && req.user.role !== 'Staff' && req.user.role !== 'Admin') {
+    if (targetUser.role === 'Student' && req.user.role !== 'Staff' && req.user.role !== 'Admin') {
       return res.status(403).json({ error: 'Only Staff and Admin can edit Student accounts' });
     }
-    if (targetRole === 'Staff' && req.user.role !== 'Admin') {
+    if (targetUser.role === 'Staff' && req.user.role !== 'Admin') {
       return res.status(403).json({ error: 'Only Admin can edit Staff accounts' });
     }
-    if (targetRole === 'Admin') {
+    if (targetUser.role === 'Admin') {
       return res.status(403).json({ error: 'Cannot edit Admin accounts' });
     }
 
     // Check if the username is already taken by another user
-    const checkUser = await db.query('SELECT id FROM users WHERE username = $1 AND id <> $2', [username, id]);
+    const checkUser = await db.query('SELECT id FROM users WHERE username = $1 AND id <> $2', [username.trim(), id]);
     if (checkUser.rows.length > 0) {
       return res.status(400).json({ error: 'Username is already taken' });
     }
 
+    const updatedSubRole = sub_role !== undefined ? sub_role : targetUser.sub_role;
+    const updatedSection = section !== undefined ? section : targetUser.section;
+    const updatedYear = year !== undefined ? year : targetUser.year;
+
     const result = await db.query(
-      'UPDATE users SET username = $1 WHERE id = $2 RETURNING *',
-      [username, id]
+      'UPDATE users SET username = $1, sub_role = $2, section = $3, year = $4 WHERE id = $5 RETURNING *',
+      [username.trim(), updatedSubRole, updatedSection, updatedYear, id]
     );
 
     res.json(result.rows[0]);
@@ -592,19 +652,29 @@ app.get('/api/forms', authenticateToken, async (req, res) => {
   }
 });
 
-// Edit Participants (Executive only)
-app.put('/api/forms/:id/participants', authenticateToken, authorizeSubRole('Executive'), async (req, res) => {
+// Edit Participants (Executive, Secretary, Organizers, Staff/Admin)
+app.put('/api/forms/:id/participants', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { student_ids } = req.body; // Array of student IDs
   try {
-    const formCheck = await db.query('SELECT f.status, f.is_completed, f.event_date, f.organizer_1, f.organizer_2, f.organizer_3, u.sub_role as creator_sub_role FROM event_forms f LEFT JOIN users u ON f.created_by = u.id WHERE f.id = $1', [id]);
+    const formCheck = await db.query(
+      'SELECT f.status, f.is_completed, f.created_by, f.event_date, f.organizer_1, f.organizer_2, f.organizer_3, u.sub_role as creator_sub_role FROM event_forms f LEFT JOIN users u ON f.created_by = u.id WHERE f.id = $1',
+      [id]
+    );
     if (formCheck.rows.length === 0) return res.status(404).json({ error: 'Form not found' });
     const form = formCheck.rows[0];
     if (form.is_completed) {
       return res.status(403).json({ error: 'Cannot edit participants on a completed form' });
     }
-    if (!isAssociationAligned(form.creator_sub_role, req.user.sub_role)) {
-      return res.status(403).json({ error: 'Unauthorized: Executive from different association' });
+
+    const userSubRoleLower = (req.user.sub_role || '').toLowerCase();
+    const isExecutiveOrSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('exec') || userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && isAssociationAligned(form.creator_sub_role, req.user.sub_role));
+    const isCreatorSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && form.created_by === req.user.id);
+    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
+    const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
+
+    if (!isExecutiveOrSecretary && !isCreatorSecretary && !isOrganizer && !isStaffOrAdmin) {
+      return res.status(403).json({ error: 'Unauthorized to edit participants' });
     }
 
     // 1. Check if any participant is already an organizer of this form
@@ -631,19 +701,22 @@ app.put('/api/forms/:id/participants', authenticateToken, authorizeSubRole('Exec
       await db.query('INSERT INTO form_participants (form_id, student_id) VALUES ($1, $2)', [id, sid]);
     }
     await db.query('COMMIT');
-    res.json({ message: 'Participants updated' });
+    res.json({ message: 'Participants updated successfully' });
   } catch (err) {
     await db.query('ROLLBACK');
     res.status(500).json({ error: err.message });
   }
 });
 
-// Edit Event Date & Time (Executive/Creator Secretary/Staff/Admin)
+// Edit Event Date & Time (Executive, Secretary, Organizers, Staff/Admin)
 app.put('/api/forms/:id/datetime', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { event_date, event_time } = req.body;
   try {
-    const formCheck = await db.query('SELECT f.created_by, f.is_completed, f.organizer_1, f.organizer_2, f.organizer_3, u.sub_role as creator_sub_role FROM event_forms f LEFT JOIN users u ON f.created_by = u.id WHERE f.id = $1', [id]);
+    const formCheck = await db.query(
+      'SELECT f.created_by, f.is_completed, f.status, f.organizer_1, f.organizer_2, f.organizer_3, u.sub_role as creator_sub_role FROM event_forms f LEFT JOIN users u ON f.created_by = u.id WHERE f.id = $1',
+      [id]
+    );
     if (formCheck.rows.length === 0) return res.status(404).json({ error: 'Form not found' });
     const form = formCheck.rows[0];
     if (form.is_completed) {
@@ -652,10 +725,11 @@ app.put('/api/forms/:id/datetime', authenticateToken, async (req, res) => {
 
     const userSubRoleLower = (req.user.sub_role || '').toLowerCase();
     const isCreatorSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && form.created_by === req.user.id);
-    const isExecutive = (req.user.role === 'Student' && userSubRoleLower.includes('exec') && isAssociationAligned(form.creator_sub_role, req.user.sub_role));
+    const isExecutiveOrSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('exec') || userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && isAssociationAligned(form.creator_sub_role, req.user.sub_role));
+    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
     const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
 
-    if (!isCreatorSecretary && !isExecutive && !isStaffOrAdmin) {
+    if (!isCreatorSecretary && !isExecutiveOrSecretary && !isOrganizer && !isStaffOrAdmin) {
       return res.status(403).json({ error: 'Unauthorized to edit date and time' });
     }
 
@@ -682,7 +756,7 @@ app.put('/api/forms/:id/datetime', authenticateToken, async (req, res) => {
       'UPDATE event_forms SET event_date = $1, event_time = $2 WHERE id = $3',
       [event_date || null, event_time || null, id]
     );
-    res.json({ message: 'Event date and time updated' });
+    res.json({ message: 'Event date and time updated successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -245,6 +245,32 @@ const FormDetails = () => {
     return user.role === 'Student' && isSecOrExec && isAssociationAligned(form.created_by_sub_role, user.sub_role);
   };
 
+  const canEditParticipants = (form) => {
+    if (!form || form.is_completed) return false;
+    if (user.role === 'Staff' || user.role === 'Admin') return true;
+    const sub = (user.sub_role || '').toLowerCase();
+    const isExecOrSec = sub.includes('exec') || sub.includes('secret') || sub.includes('secert');
+    const isOrg = [form.organizer_1, form.organizer_2, form.organizer_3].includes(user.id);
+    const isCreatorSec = (sub.includes('secret') || sub.includes('secert')) && form.created_by === user.id;
+
+    if (isOrg || isCreatorSec) return true;
+    if (isExecOrSec && isAssociationAligned(form.created_by_sub_role, user.sub_role)) return true;
+    return false;
+  };
+
+  const canEditDateTime = (form) => {
+    if (!form || form.is_completed) return false;
+    if (user.role === 'Staff' || user.role === 'Admin') return true;
+    const sub = (user.sub_role || '').toLowerCase();
+    const isExecOrSec = sub.includes('exec') || sub.includes('secret') || sub.includes('secert');
+    const isOrg = [form.organizer_1, form.organizer_2, form.organizer_3].includes(user.id);
+    const isCreatorSec = (sub.includes('secret') || sub.includes('secert')) && form.created_by === user.id;
+
+    if (isOrg || isCreatorSec) return true;
+    if (isExecOrSec && isAssociationAligned(form.created_by_sub_role, user.sub_role)) return true;
+    return false;
+  };
+
 
   const handleCompleteChange = async (formId, isCompleted) => {
     const actionText = isCompleted ? 'mark this event as completed' : 'reopen this event';
@@ -327,10 +353,7 @@ const FormDetails = () => {
   useEffect(() => {
     fetchForms();
     fetchAgenda();
-    const sub = (user.sub_role || '').toLowerCase();
-    if (sub.includes('exec')) {
-      fetchUsers();
-    }
+    fetchUsers();
   }, [user]);
 
   useEffect(() => {
@@ -578,8 +601,11 @@ const FormDetails = () => {
   };
 
   const startEditingParticipants = (form) => {
+    if (users.length === 0) {
+      fetchUsers();
+    }
     setEditingParticipants(form.id);
-    setSelectedParticipants(form.participants.map(p => p.id.toString()));
+    setSelectedParticipants(form.participants ? form.participants.map(p => p.id.toString()) : []);
     setPartYear('');
     setPartSection('');
     setParticipantInput('');
@@ -636,10 +662,9 @@ const FormDetails = () => {
     if (user.role === 'Admin' || user.role === 'Staff') return true;
     if (isOrganizer(form)) return true;
     const sub = (user.sub_role || '').toLowerCase();
-    if (user.role === 'Student' && (sub.includes('secret') || sub.includes('secert') || sub.includes('exec'))) {
-      return true;
-    }
-    return false;
+    const isSecOrExec = sub.includes('secret') || sub.includes('secert') || sub.includes('exec');
+    if (!isSecOrExec) return false;
+    return isAssociationAligned(form.created_by_sub_role, user.sub_role);
   };
 
   const isFormComplete = (form) => {
@@ -978,7 +1003,7 @@ const FormDetails = () => {
                               ? form.participants.map(p => p.username).join(', ')
                               : 'No participants'}
                           </span>
-                          {((user.sub_role || '').toLowerCase().includes('exec')) && isAssociationAligned(form.created_by_sub_role, user.sub_role) && !form.is_completed && (
+                          {canEditParticipants(form) && (
                             <button
                               style={{
                                 background: 'none',
@@ -1265,9 +1290,7 @@ const FormDetails = () => {
                 <p style={{ margin: '0.25rem 0' }}><strong>Event Date:</strong> {currentViewingForm.event_date ? new Date(currentViewingForm.event_date).toLocaleDateString() : 'N/A'}</p>
                 <p style={{ margin: '0.25rem 0' }}><strong>Event Time:</strong> {currentViewingForm.event_time || 'N/A'}</p>
                 <p style={{ margin: '0.25rem 0' }}><strong>Status:</strong> <span className={`badge badge-${currentViewingForm.status}`}>{currentViewingForm.status}</span></p>
-                {((user.role === 'Student' && ((user.sub_role || '').toLowerCase().includes('secret') || (user.sub_role || '').toLowerCase().includes('secert')) && currentViewingForm.created_by === user.id) ||
-                  (user.role === 'Student' && ((user.sub_role || '').toLowerCase().includes('exec')) && isAssociationAligned(currentViewingForm.created_by_sub_role, user.sub_role)) ||
-                  (user.role === 'Admin' || user.role === 'Staff')) && !currentViewingForm.is_completed && (
+                {canEditDateTime(currentViewingForm) && (
                     <button
                       className="btn btn-secondary"
                       style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', marginTop: '0.5rem' }}
@@ -1310,7 +1333,7 @@ const FormDetails = () => {
                 <div style={{ marginBottom: '1.25rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                     <h4 style={{ margin: 0, fontSize: '1.05rem' }}><Users size={16} style={{ verticalAlign: 'middle', marginRight: '0.25rem' }} /> Participants</h4>
-                    {((user.sub_role || '').toLowerCase().includes('exec')) && isAssociationAligned(currentViewingForm.created_by_sub_role, user.sub_role) && editingParticipants !== currentViewingForm.id && (
+                    {canEditParticipants(currentViewingForm) && editingParticipants !== currentViewingForm.id && (
                       <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingParticipants(currentViewingForm)}>
                         <Edit3 size={14} /> Edit
                       </button>
@@ -2068,62 +2091,7 @@ const FormDetails = () => {
                 </div>
               )}
 
-              {/* Outcomes Box (Empty Box) */}
-              <div style={{ marginBottom: '2rem' }}>
-                <h4 style={{ fontSize: '11pt', fontWeight: 'bold', color: 'black', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
-                  Outcomes
-                </h4>
-                <div style={{
-                  border: '1px solid black',
-                  minHeight: '100px',
-                  padding: '0.75rem',
-                  fontSize: '9.5pt',
-                  color: 'black',
-                  background: 'white',
-                  borderRadius: '4px'
-                }}>
-                  {singlePrintForm.outcomes || null}
-                </div>
-              </div>
 
-              {/* 4 Signatures Block: Event Organizer, Executive Council, Secretary, Faculty Advisor */}
-              <div style={{
-                marginTop: '3.5rem',
-                paddingTop: '1rem',
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
-                gap: '1rem',
-                alignItems: 'flex-end',
-                pageBreakInside: 'avoid'
-              }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ borderBottom: '1.5px solid black', height: '35px', marginBottom: '0.5rem' }}></div>
-                  <div style={{ fontSize: '9pt', fontWeight: 'bold', color: 'black' }}>
-                    Event Organizer
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ borderBottom: '1.5px solid black', height: '35px', marginBottom: '0.5rem' }}></div>
-                  <div style={{ fontSize: '9pt', fontWeight: 'bold', color: 'black' }}>
-                    Executive Council
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ borderBottom: '1.5px solid black', height: '35px', marginBottom: '0.5rem' }}></div>
-                  <div style={{ fontSize: '9pt', fontWeight: 'bold', color: 'black' }}>
-                    Secretary
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ borderBottom: '1.5px solid black', height: '35px', marginBottom: '0.5rem' }}></div>
-                  <div style={{ fontSize: '9pt', fontWeight: 'bold', color: 'black' }}>
-                    Faculty Advisor
-                  </div>
-                </div>
-              </div>
 
             </div>
           </div>

@@ -22,15 +22,24 @@ const UserManagement = () => {
   // Editing State
   const [editingUserId, setEditingUserId] = useState(null);
   const [editingUsername, setEditingUsername] = useState('');
+  const [editingSubRole, setEditingSubRole] = useState('Regular');
+  const [editingSection, setEditingSection] = useState('A');
+  const [editingYear, setEditingYear] = useState('1st Year');
 
   const handleEditClick = (u) => {
     setEditingUserId(u.id);
     setEditingUsername(u.username);
+    setEditingSubRole(u.sub_role || 'Regular');
+    setEditingSection(u.section || 'A');
+    setEditingYear(u.year || '1st Year');
   };
 
   const handleCancelEdit = () => {
     setEditingUserId(null);
     setEditingUsername('');
+    setEditingSubRole('Regular');
+    setEditingSection('A');
+    setEditingYear('1st Year');
   };
 
   const handleSaveEdit = async (uId) => {
@@ -39,12 +48,17 @@ const UserManagement = () => {
       return;
     }
     try {
-      await api.put(`/users/${uId}`, { username: editingUsername });
+      await api.put(`/users/${uId}`, {
+        username: editingUsername,
+        sub_role: editingSubRole,
+        section: editingSection,
+        year: editingYear
+      });
       setEditingUserId(null);
       setEditingUsername('');
       fetchUsers();
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to update student name');
+      alert(err.response?.data?.error || 'Failed to update student details');
     }
   };
 
@@ -181,29 +195,323 @@ const UserManagement = () => {
     }
   };
 
+  // Bulk Import State
+  const [createMode, setCreateMode] = useState('single'); // 'single' | 'bulk'
+  const [bulkText, setBulkText] = useState('');
+  const [bulkSection, setBulkSection] = useState('');
+  const [bulkYear, setBulkYear] = useState('1st Year');
+  const [bulkSubRole, setBulkSubRole] = useState('Regular');
+  const [bulkMsg, setBulkMsg] = useState('');
+  const [bulkError, setBulkError] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+
+  // Auto-detect section and parse student list (supports single-line and multi-line Word tables)
+  const parseStudentList = () => {
+    if (!bulkText.trim()) return { detectedSection: 'A', students: [] };
+
+    // Detect section if not manually set
+    let detectedSec = bulkSection;
+    if (!detectedSec) {
+      const secMatch = bulkText.match(/Section\s*[-–—]?\s*([A-D])/i);
+      if (secMatch) {
+        detectedSec = secMatch[1].toUpperCase();
+      }
+    }
+    if (!detectedSec) detectedSec = 'A';
+
+    const rawLines = bulkText.split(/\r?\n/);
+    const tokens = [];
+
+    for (let l of rawLines) {
+      const t = l.trim();
+      if (!t) continue;
+
+      // Skip common document header phrases
+      if (t.match(/MEPCO|SCHLENK|ENGINEERING|COLLEGE|AUTONOMOUS|SIVAKASI|SCHOOL|MANAGEMENT|STUDIES|Students List|Roll No|Name of the Student|^Sl\.?$/i)) {
+        continue;
+      }
+
+      // Split line if tab-separated
+      const parts = t.split(/\t+/);
+      if (parts.length > 1) {
+        for (let p of parts) {
+          const pt = p.trim();
+          if (pt) tokens.push(pt);
+        }
+      } else {
+        tokens.push(t);
+      }
+    }
+
+    const isRollNumber = (str) => {
+      if (!str) return false;
+      const s = str.trim();
+      if (/\s/.test(s)) return false;
+      if (s.length < 5 || s.length > 15) return false;
+      return /\d/.test(s) && /[A-Za-z]/.test(s);
+    };
+
+    const isSerial = (str) => {
+      return /^\d+[\.\)]?$/.test(str.trim());
+    };
+
+    const students = [];
+    let i = 0;
+
+    while (i < tokens.length) {
+      const token = tokens[i].trim();
+
+      // 1. Single-line check e.g. "1. 25MBA001 Abinaya.S" or "25MBA001 Abinaya.S"
+      const cleanToken = token.replace(/^\d+[\.\)]?\s*/, '').trim();
+      const inlineMatch = cleanToken.match(/^([A-Za-z0-9]{5,15})\s+([A-Za-z0-9\.\s'-]+)$/);
+
+      if (inlineMatch && isRollNumber(inlineMatch[1])) {
+        const roll = inlineMatch[1].trim();
+        const name = inlineMatch[2].trim().replace(/^[-:\.]\s*/, '');
+        if (roll && name && name.length >= 2) {
+          students.push({
+            roll_number: roll,
+            username: name,
+            section: detectedSec,
+            year: bulkYear,
+            sub_role: bulkSubRole,
+            role: 'Student',
+            password: roll
+          });
+        }
+        i++;
+        continue;
+      }
+
+      // 2. Multi-line check (Token i is Roll Number, Token i+1 is Name)
+      if (isRollNumber(token)) {
+        const roll = token;
+        let nextIdx = i + 1;
+        let name = '';
+        while (nextIdx < tokens.length) {
+          const nextTok = tokens[nextIdx].trim();
+          if (isSerial(nextTok)) {
+            nextIdx++;
+            continue;
+          }
+          if (!isRollNumber(nextTok)) {
+            name = nextTok.replace(/^[-:\.]\s*/, '');
+            break;
+          } else {
+            break;
+          }
+        }
+
+        if (roll && name && name.length >= 2) {
+          students.push({
+            roll_number: roll,
+            username: name,
+            section: detectedSec,
+            year: bulkYear,
+            sub_role: bulkSubRole,
+            role: 'Student',
+            password: roll
+          });
+          i = nextIdx + 1;
+          continue;
+        }
+      }
+
+      i++;
+    }
+
+    return { detectedSection: detectedSec, students };
+  };
+
+  const parsedData = parseStudentList();
+  const effectiveSection = bulkSection || parsedData.detectedSection;
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const arrayBuffer = event.target.result;
+          const mammoth = await import('mammoth');
+          const result = await mammoth.extractRawText({ arrayBuffer });
+          setBulkText(result.value);
+        } catch (err) {
+          console.error('Word parsing error:', err);
+          // Fallback text extraction
+          const decoder = new TextDecoder('utf-8');
+          const text = decoder.decode(event.target.result);
+          const matches = text.match(/<w:t[^>]*>(.*?)<\/w:t>/g);
+          if (matches) {
+            setBulkText(matches.map(m => m.replace(/<[^>]+>/g, '')).join('\n'));
+          } else {
+            setBulkText(text.replace(/[\x00-\x1F\x7F-\x9F]/g, ' '));
+          }
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setBulkText(event.target.result);
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleBulkImportSubmit = async (e) => {
+    e.preventDefault();
+    setBulkError('');
+    setBulkMsg('');
+
+    if (parsedData.students.length === 0) {
+      setBulkError('No valid student entries found in the text. Ensure roll numbers and names are present.');
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      // Apply current section, year, subrole to all students
+      const finalStudents = parsedData.students.map(s => ({
+        ...s,
+        section: effectiveSection,
+        year: bulkYear,
+        sub_role: bulkSubRole,
+        password: s.roll_number
+      }));
+
+      const res = await api.post('/users/bulk', { students: finalStudents });
+      setBulkMsg(res.data.message || 'Students imported successfully!');
+      setBulkText('');
+      fetchUsers();
+    } catch (err) {
+      setBulkError(err.response?.data?.error || 'Failed to import students');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <div className="grid-split">
       <div className="glass-panel">
-        <h3><UserPlus size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} /> Create User</h3>
-        {error && <div style={{ color: '#FCA5A5', marginBottom: '1rem', fontSize: '0.875rem' }}>{error}</div>}
-        <form onSubmit={handleCreate}>
-          <div className="input-group">
-            <label>Username</label>
-            <input type="text" className="input" value={username} onChange={e => setUsername(e.target.value)} required />
-          </div>
-          <div className="input-group">
-            <label>Password</label>
-            <input type="password" className="input" value={password} onChange={e => setPassword(e.target.value)} required />
-          </div>
-          {role === 'Student' && (
-            <>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.1)', pb: '0.75rem' }}>
+          <button
+            type="button"
+            className={`btn ${createMode === 'single' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setCreateMode('single')}
+            style={{ padding: '0.4rem 0.8rem', fontSize: '0.875rem' }}
+          >
+            Single User
+          </button>
+          {(user.role === 'Staff' || user.role === 'Admin') && (
+            <button
+              type="button"
+              className={`btn ${createMode === 'bulk' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setCreateMode('bulk')}
+              style={{ padding: '0.4rem 0.8rem', fontSize: '0.875rem' }}
+            >
+              Bulk Student Import (Word / List)
+            </button>
+          )}
+        </div>
+
+        {createMode === 'single' ? (
+          <>
+            <h3><UserPlus size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} /> Create User</h3>
+            {error && <div style={{ color: '#FCA5A5', marginBottom: '1rem', fontSize: '0.875rem' }}>{error}</div>}
+            <form onSubmit={handleCreate}>
               <div className="input-group">
-                <label>Roll Number *</label>
-                <input type="text" className="input" value={rollNumber} onChange={e => setRollNumber(e.target.value)} required />
+                <label>Username</label>
+                <input type="text" className="input" value={username} onChange={e => setUsername(e.target.value)} required />
               </div>
               <div className="input-group">
-                <label>Sub-Role</label>
-                <select className="select" value={subRole} onChange={e => setSubRole(e.target.value)}>
+                <label>Password</label>
+                <input type="password" className="input" value={password} onChange={e => setPassword(e.target.value)} required />
+              </div>
+              {role === 'Student' && (
+                <>
+                  <div className="input-group">
+                    <label>Roll Number *</label>
+                    <input type="text" className="input" value={rollNumber} onChange={e => setRollNumber(e.target.value)} required />
+                  </div>
+                  <div className="input-group">
+                    <label>Sub-Role</label>
+                    <select className="select" value={subRole} onChange={e => setSubRole(e.target.value)}>
+                      <option value="Regular">Regular Student</option>
+                      <option value="Secretary">Secretary</option>
+                      <option value="Executive">Executive</option>
+                      <option value="NISM Secretary">NISM Secretary</option>
+                      <option value="NISM Executive">NISM Executive</option>
+                      <option value="NIPM Secretary">NIPM Secretary</option>
+                      <option value="NIPM Executive">NIPM Executive</option>
+                      <option value="Ad Club Secretary">Ad Club Secretary</option>
+                      <option value="Ad Club Executive">Ad Club Executive</option>
+                    </select>
+                  </div>
+                  <div className="input-group">
+                    <label>Section *</label>
+                    <select className="select" value={section} onChange={e => setSection(e.target.value)} required={role === 'Student'}>
+                      <option value="">Select Section</option>
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C</option>
+                      <option value="D">D</option>
+                    </select>
+                  </div>
+                  <div className="input-group">
+                    <label>Year *</label>
+                    <select className="select" value={year} onChange={e => setYear(e.target.value)} required={role === 'Student'}>
+                      <option value="">Select Year</option>
+                      <option value="1st Year">1st Year</option>
+                      <option value="2nd Year">2nd Year</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              <div className="input-group">
+                <label>Role</label>
+                <select className="select" value={role} onChange={e => setRole(e.target.value)}>
+                  {user.role === 'Admin' && <option value="Staff">Staff</option>}
+                  {user.role === 'Staff' && <option value="Student">Student</option>}
+                </select>
+              </div>
+              <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>Create Account</button>
+            </form>
+          </>
+        ) : (
+          <div>
+            <h3>Bulk Import Students</h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+              Paste student list from Word or upload a file. Auto-detects Section, sets default Year as 1st Year, Sub-Role as Regular, and Password as Roll Number.
+            </p>
+
+            {bulkError && <div style={{ color: '#FCA5A5', marginBottom: '1rem', fontSize: '0.875rem' }}>{bulkError}</div>}
+            {bulkMsg && <div style={{ color: '#34D399', marginBottom: '1rem', fontSize: '0.875rem' }}>{bulkMsg}</div>}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div className="input-group" style={{ margin: 0 }}>
+                <label>Section (Auto: {parsedData.detectedSection})</label>
+                <select className="select" value={effectiveSection} onChange={e => setBulkSection(e.target.value)}>
+                  <option value="A">Section A</option>
+                  <option value="B">Section B</option>
+                  <option value="C">Section C</option>
+                  <option value="D">Section D</option>
+                </select>
+              </div>
+
+              <div className="input-group" style={{ margin: 0 }}>
+                <label>Default Year</label>
+                <select className="select" value={bulkYear} onChange={e => setBulkYear(e.target.value)}>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                </select>
+              </div>
+
+              <div className="input-group" style={{ margin: 0 }}>
+                <label>Default Sub-Role</label>
+                <select className="select" value={bulkSubRole} onChange={e => setBulkSubRole(e.target.value)}>
                   <option value="Regular">Regular Student</option>
                   <option value="Secretary">Secretary</option>
                   <option value="Executive">Executive</option>
@@ -215,35 +523,81 @@ const UserManagement = () => {
                   <option value="Ad Club Executive">Ad Club Executive</option>
                 </select>
               </div>
-              <div className="input-group">
-                <label>Section *</label>
-                <select className="select" value={section} onChange={e => setSection(e.target.value)} required={role === 'Student'}>
-                  <option value="">Select Section</option>
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                  <option value="D">D</option>
-                </select>
+            </div>
+
+            <div className="input-group">
+              <label>Upload File (.txt, .doc, .docx)</label>
+              <input type="file" accept=".txt,.doc,.docx" onChange={handleFileUpload} className="input" style={{ padding: '0.4rem' }} />
+            </div>
+
+            <div className="input-group">
+              <label>Or Paste Text from Word Document</label>
+              <textarea
+                className="input"
+                rows={8}
+                value={bulkText}
+                onChange={e => setBulkText(e.target.value)}
+                placeholder={`Paste student list here, e.g.:
+
+MEPCO SCHLENK ENGINEERING COLLEGE (AUTONOMOUS), SIVAKASI
+MEPCO SCHOOL OF MANAGEMENT STUDIES
+Students List (2025 – 2027) – Section A
+
+Sl. Roll No Name of the Student
+1. 25MBA001 Abinaya.S
+2. 25MBA002 Aishwarya.G`}
+                style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+              />
+            </div>
+
+            {parsedData.students.length > 0 && (
+              <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ fontWeight: 600, color: '#34D399', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                  ✓ Preview: {parsedData.students.length} student(s) detected for Section {effectiveSection} ({bulkYear})
+                </div>
+                <div style={{ maxHeight: '180px', overflowY: 'auto', fontSize: '0.8rem' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', textAlign: 'left' }}>
+                        <th style={{ padding: '4px' }}>Roll No</th>
+                        <th style={{ padding: '4px' }}>Name</th>
+                        <th style={{ padding: '4px' }}>Section</th>
+                        <th style={{ padding: '4px' }}>Year</th>
+                        <th style={{ padding: '4px' }}>Password</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parsedData.students.slice(0, 10).map((s, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={{ padding: '4px' }}>{s.roll_number}</td>
+                          <td style={{ padding: '4px' }}>{s.username}</td>
+                          <td style={{ padding: '4px' }}>{effectiveSection}</td>
+                          <td style={{ padding: '4px' }}>{bulkYear}</td>
+                          <td style={{ padding: '4px', color: 'var(--text-muted)' }}>{s.roll_number}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {parsedData.students.length > 10 && (
+                    <div style={{ color: 'var(--text-muted)', marginTop: '4px', fontStyle: 'italic' }}>
+                      ...and {parsedData.students.length - 10} more student(s)
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="input-group">
-                <label>Year *</label>
-                <select className="select" value={year} onChange={e => setYear(e.target.value)} required={role === 'Student'}>
-                  <option value="">Select Year</option>
-                  <option value="1st Year">1st Year</option>
-                  <option value="2nd Year">2nd Year</option>
-                </select>
-              </div>
-            </>
-          )}
-          <div className="input-group">
-            <label>Role</label>
-            <select className="select" value={role} onChange={e => setRole(e.target.value)}>
-              {user.role === 'Admin' && <option value="Staff">Staff</option>}
-              {user.role === 'Staff' && <option value="Student">Student</option>}
-            </select>
+            )}
+
+            <button
+              type="button"
+              onClick={handleBulkImportSubmit}
+              disabled={isImporting || parsedData.students.length === 0}
+              className="btn btn-primary"
+              style={{ width: '100%' }}
+            >
+              {isImporting ? 'Importing...' : `Import ${parsedData.students.length} Student(s)`}
+            </button>
           </div>
-          <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>Create Account</button>
-        </form>
+        )}
       </div>
 
       <div className="glass-panel">
@@ -367,6 +721,7 @@ const UserManagement = () => {
                 <th>Section</th>
                 <th>Year</th>
                 <th>Role</th>
+                <th>Sub-Role</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -399,11 +754,66 @@ const UserManagement = () => {
                     )}
                   </td>
                   <td>{u.roll_number || '-'}</td>
-                  <td>{u.section || '-'}</td>
-                  <td>{u.year || '-'}</td>
+                  <td>
+                    {editingUserId === u.id && u.role === 'Student' ? (
+                      <select
+                        className="select"
+                        value={editingSection}
+                        onChange={(e) => setEditingSection(e.target.value)}
+                        style={{ padding: '0.2rem 0.4rem', fontSize: '0.85rem' }}
+                      >
+                        <option value="A">A</option>
+                        <option value="B">B</option>
+                        <option value="C">C</option>
+                        <option value="D">D</option>
+                      </select>
+                    ) : (
+                      u.section || '-'
+                    )}
+                  </td>
+                  <td>
+                    {editingUserId === u.id && u.role === 'Student' ? (
+                      <select
+                        className="select"
+                        value={editingYear}
+                        onChange={(e) => setEditingYear(e.target.value)}
+                        style={{ padding: '0.2rem 0.4rem', fontSize: '0.85rem' }}
+                      >
+                        <option value="1st Year">1st Year</option>
+                        <option value="2nd Year">2nd Year</option>
+                      </select>
+                    ) : (
+                      u.year || '-'
+                    )}
+                  </td>
                   <td>
                     <span className={`badge badge-${u.role}`}>{u.role}</span>
-                    {u.sub_role && <span className="badge" style={{ marginLeft: '8px', background: 'rgba(255,255,255,0.1)' }}>{u.sub_role}</span>}
+                  </td>
+                  <td>
+                    {editingUserId === u.id && u.role === 'Student' ? (
+                      <select
+                        className="select"
+                        value={editingSubRole}
+                        onChange={(e) => setEditingSubRole(e.target.value)}
+                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.85rem', minWidth: '140px' }}
+                      >
+                        <option value="Regular">Regular Student</option>
+                        <option value="Secretary">Secretary</option>
+                        <option value="Executive">Executive</option>
+                        <option value="NISM Secretary">NISM Secretary</option>
+                        <option value="NISM Executive">NISM Executive</option>
+                        <option value="NIPM Secretary">NIPM Secretary</option>
+                        <option value="NIPM Executive">NIPM Executive</option>
+                        <option value="Ad Club Secretary">Ad Club Secretary</option>
+                        <option value="Ad Club Executive">Ad Club Executive</option>
+                      </select>
+                    ) : (
+                      u.sub_role ? (
+                        <span className="badge" style={{ background: 'rgba(255,255,255,0.1)' }}>{u.sub_role}</span>
+                      ) : (
+                        '-'
+                      )
+                    )}
                   </td>
                   <td>
                     {editingUserId === u.id ? (
@@ -419,7 +829,7 @@ const UserManagement = () => {
                       <div style={{ display: 'flex', gap: '0.25rem' }}>
                         {isDeletable(u) && (
                           <>
-                            <button onClick={() => handleEditClick(u)} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem' }} title="Edit Name">
+                            <button onClick={() => handleEditClick(u)} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem' }} title="Edit Student">
                               <Edit3 size={16} />
                             </button>
                             <button onClick={() => handleDelete(u.id)} className="btn btn-danger" style={{ padding: '0.4rem 0.6rem' }} title="Delete User">
@@ -434,7 +844,7 @@ const UserManagement = () => {
               ))}
               {filteredUsers.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="8" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan="9" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                     No users found
                   </td>
                 </tr>
