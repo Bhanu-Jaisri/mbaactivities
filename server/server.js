@@ -668,12 +668,10 @@ app.put('/api/forms/:id/participants', authenticateToken, async (req, res) => {
     }
 
     const userSubRoleLower = (req.user.sub_role || '').toLowerCase();
-    const isExecutiveOrSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('exec') || userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && isAssociationAligned(form.creator_sub_role, req.user.sub_role));
-    const isCreatorSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && form.created_by === req.user.id);
-    const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
+    const isExecutive = (req.user.role === 'Student' && userSubRoleLower.includes('exec') && isAssociationAligned(form.creator_sub_role, req.user.sub_role));
 
-    if (!isExecutiveOrSecretary && !isCreatorSecretary && !isStaffOrAdmin) {
-      return res.status(403).json({ error: 'Unauthorized to edit participants. Only Executives, Secretaries, and Staff/Admin can edit participants.' });
+    if (!isExecutive) {
+      return res.status(403).json({ error: 'Unauthorized to edit participants. Only Executive Council members can edit or add participants.' });
     }
 
     // 1. Check if any participant is already an organizer of this form

@@ -68,6 +68,7 @@ const FormDetails = () => {
   const [participantInput, setParticipantInput] = useState('');
   const [partYear, setPartYear] = useState('');
   const [partSection, setPartSection] = useState('');
+  const [partSearch, setPartSearch] = useState('');
 
   // Rejection/Resubmit State
   const [rejectingFormId, setRejectingFormId] = useState(null);
@@ -247,13 +248,14 @@ const FormDetails = () => {
 
   const canEditParticipants = (form) => {
     if (!form || form.is_completed) return false;
-    if (user.role === 'Staff' || user.role === 'Admin') return true;
-    const sub = (user.sub_role || '').toLowerCase();
-    const isExecOrSec = sub.includes('exec') || sub.includes('secret') || sub.includes('secert');
-    const isCreatorSec = (sub.includes('secret') || sub.includes('secert')) && form.created_by === user.id;
+    if (user.role !== 'Student') return false;
 
-    if (isCreatorSec) return true;
-    if (isExecOrSec && isAssociationAligned(form.created_by_sub_role, user.sub_role)) return true;
+    const sub = (user.sub_role || '').toLowerCase();
+    const isExecutive = sub.includes('exec');
+
+    if (isExecutive && isAssociationAligned(form.created_by_sub_role, user.sub_role)) {
+      return true;
+    }
     return false;
   };
 
@@ -669,6 +671,7 @@ const FormDetails = () => {
     setSelectedParticipants(form.participants ? form.participants.map(p => p.id.toString()) : []);
     setPartYear('');
     setPartSection('');
+    setPartSearch('');
     setParticipantInput('');
   };
 
@@ -1066,13 +1069,53 @@ const FormDetails = () => {
                           {form.org3_name && <div><strong>{form.org3_name}</strong></div>}
                         </div>
                       </td>
-                      <td style={{ padding: '1rem' }}>
+                      <td style={{ padding: '1rem', minWidth: '220px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                          <span>
-                            {form.participants && form.participants.length > 0
-                              ? form.participants.map(p => p.username).join(', ')
-                              : 'No participants'}
-                          </span>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center' }}>
+                            {form.participants && form.participants.length > 0 ? (
+                              <>
+                                {form.participants.slice(0, 3).map(p => (
+                                  <span
+                                    key={p.id}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      padding: '0.2rem 0.55rem',
+                                      borderRadius: '12px',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 500,
+                                      background: 'rgba(79, 70, 229, 0.12)',
+                                      color: 'var(--text)',
+                                      border: '1px solid rgba(79, 70, 229, 0.25)',
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    {p.username}
+                                  </span>
+                                ))}
+                                {form.participants.length > 3 && (
+                                  <span
+                                    style={{
+                                      padding: '0.2rem 0.5rem',
+                                      borderRadius: '12px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      background: 'rgba(6, 182, 212, 0.15)',
+                                      color: 'var(--cyan)',
+                                      border: '1px solid rgba(6, 182, 212, 0.3)'
+                                    }}
+                                    title={form.participants.map(p => p.username).join(', ')}
+                                  >
+                                    +{form.participants.length - 3} more
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                                No participants
+                              </span>
+                            )}
+                          </div>
                           {canEditParticipants(form) && (
                             <button
                               style={{
@@ -1083,7 +1126,8 @@ const FormDetails = () => {
                                 padding: '0.25rem',
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                justifyContent: 'center'
+                                justifyContent: 'center',
+                                flexShrink: 0
                               }}
                               onClick={() => {
                                 setViewingForm(form);
@@ -1411,96 +1455,221 @@ const FormDetails = () => {
                   </div>
 
                   {editingParticipants === currentViewingForm.id ? (
-                    <div style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px' }}>
-                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                        <select
-                          className="select"
-                          value={partYear}
-                          onChange={e => {
-                            setPartYear(e.target.value);
-                            setParticipantInput('');
-                          }}
-                          style={{ flex: 1, padding: '0.5rem' }}
-                        >
-                          <option value="">All Years</option>
-                          <option value="1st Year">1st Year</option>
-                          <option value="2nd Year">2nd Year</option>
-                        </select>
-                        <select
-                          className="select"
-                          value={partSection}
-                          onChange={e => {
-                            setPartSection(e.target.value);
-                            setParticipantInput('');
-                          }}
-                          style={{ flex: 1, padding: '0.5rem' }}
-                        >
-                          <option value="">All Sections</option>
-                          <option value="A">Sec A</option>
-                          <option value="B">Sec B</option>
-                          <option value="C">Sec C</option>
-                          <option value="D">Sec D</option>
-                        </select>
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                        <select
-                          className="select"
-                          value={participantInput}
-                          onChange={(e) => setParticipantInput(e.target.value)}
-                          style={{ flex: 1, padding: '0.5rem' }}
-                        >
-                          <option value="">Select Student</option>
-                          {users
-                            .filter(u => {
-                              if (partYear && u.year !== partYear) return false;
-                              if (partSection && u.section !== partSection) return false;
-                              return true;
-                            })
-                            .map(u => {
-                              const isAlreadyAdded = selectedParticipants.includes(u.id.toString());
-                              const conflict = getConflictInfoForStudent(u.id, currentViewingForm?.event_date, currentViewingForm?.id);
-                              const isDisabled = isAlreadyAdded || Boolean(conflict);
+                    <div style={{
+                      marginTop: '0.75rem',
+                      background: 'var(--input-bg)',
+                      border: '1px solid var(--surface-border)',
+                      padding: '1.25rem',
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+                    }}>
+                      <h5 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        Filter & Add Student Participant
+                      </h5>
 
-                              let statusText = '';
-                              if (isAlreadyAdded) {
-                                statusText = ' - (Already Added)';
-                              } else if (conflict) {
-                                statusText = ` - (${conflict})`;
-                              }
-
-                              return (
-                                <option key={u.id} value={u.roll_number || u.username} disabled={isDisabled}>
-                                  {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'}){statusText}
-                                </option>
-                              );
-                            })
-                          }
-                        </select>
-                        <button className="btn btn-primary" onClick={addParticipantByRoll}>Add</button>
+                      {/* Filter controls */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Year</label>
+                          <select
+                            className="select"
+                            value={partYear}
+                            onChange={e => {
+                              setPartYear(e.target.value);
+                              setParticipantInput('');
+                            }}
+                            style={{ width: '100%', padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
+                          >
+                            <option value="">All Years</option>
+                            <option value="1st Year">1st Year</option>
+                            <option value="2nd Year">2nd Year</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Section</label>
+                          <select
+                            className="select"
+                            value={partSection}
+                            onChange={e => {
+                              setPartSection(e.target.value);
+                              setParticipantInput('');
+                            }}
+                            style={{ width: '100%', padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
+                          >
+                            <option value="">All Sections</option>
+                            <option value="A">Sec A</option>
+                            <option value="B">Sec B</option>
+                            <option value="C">Sec C</option>
+                            <option value="D">Sec D</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Search Student</label>
+                          <input
+                            type="text"
+                            className="input"
+                            placeholder="Name, Roll #, or Sub-Role..."
+                            value={partSearch}
+                            onChange={e => setPartSearch(e.target.value)}
+                            style={{ width: '100%', padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
+                          />
+                        </div>
                       </div>
-                      <div style={{ maxHeight: '150px', overflowY: 'auto', marginBottom: '1rem' }}>
-                        {selectedParticipants.map(idStr => {
-                          const u = users.find(user => user.id.toString() === idStr);
-                          return u ? (
-                            <div key={idStr} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '4px' }}>
-                              <span>{u.username} ({u.roll_number || 'No Roll #'})</span>
-                              <button className="btn btn-danger" style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }} onClick={() => toggleParticipant(u.id)}>Remove</button>
+
+                      {/* Selection Row */}
+                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', alignItems: 'flex-end' }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Select Student</label>
+                          <select
+                            className="select"
+                            value={participantInput}
+                            onChange={(e) => setParticipantInput(e.target.value)}
+                            style={{ width: '100%', padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
+                          >
+                            <option value="">-- Choose Student --</option>
+                            {users
+                              .filter(u => {
+                                if (partYear && u.year !== partYear) return false;
+                                if (partSection && u.section !== partSection) return false;
+                                if (partSearch.trim()) {
+                                  const q = partSearch.toLowerCase().trim();
+                                  const nameMatch = (u.username || '').toLowerCase().includes(q);
+                                  const rollMatch = (u.roll_number || '').toLowerCase().includes(q);
+                                  const subMatch = (u.sub_role || '').toLowerCase().includes(q);
+                                  if (!nameMatch && !rollMatch && !subMatch) return false;
+                                }
+                                return true;
+                              })
+                              .map(u => {
+                                const isAlreadyAdded = selectedParticipants.includes(u.id.toString());
+                                const conflict = getConflictInfoForStudent(u.id, currentViewingForm?.event_date, currentViewingForm?.id);
+                                const isDisabled = isAlreadyAdded || Boolean(conflict);
+
+                                let statusText = '';
+                                if (isAlreadyAdded) {
+                                  statusText = ' - (Already Added)';
+                                } else if (conflict) {
+                                  statusText = ` - (${conflict})`;
+                                }
+
+                                return (
+                                  <option key={u.id} value={u.roll_number || u.username} disabled={isDisabled}>
+                                    {u.username} ({u.roll_number || 'No Roll #'} | Sec {u.section || 'N/A'} - {u.year || 'N/A'}{u.sub_role ? ` | ${u.sub_role}` : ''}){statusText}
+                                  </option>
+                                );
+                              })
+                            }
+                          </select>
+                        </div>
+                        <button
+                          className="btn btn-primary"
+                          onClick={addParticipantByRoll}
+                          style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem', height: '38px', whiteSpace: 'nowrap' }}
+                        >
+                          + Add
+                        </button>
+                      </div>
+
+                      {/* Added Participants Container */}
+                      <div style={{
+                        border: '1px solid var(--surface-border)',
+                        borderRadius: '8px',
+                        padding: '0.75rem',
+                        background: 'var(--surface)',
+                        marginBottom: '1.25rem'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', borderBottom: '1px solid var(--surface-border)', paddingBottom: '0.4rem' }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>
+                            Selected Participants ({selectedParticipants.length})
+                          </span>
+                        </div>
+
+                        <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingRight: '0.25rem' }}>
+                          {selectedParticipants.map(idStr => {
+                            const u = users.find(user => user.id.toString() === idStr);
+                            return u ? (
+                              <div
+                                key={idStr}
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  background: 'rgba(79, 70, 229, 0.08)',
+                                  border: '1px solid rgba(79, 70, 229, 0.2)',
+                                  padding: '0.5rem 0.75rem',
+                                  borderRadius: '6px'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                  <strong style={{ fontSize: '0.88rem', color: 'var(--text)' }}>{u.username}</strong>
+                                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                    ({u.roll_number || 'No Roll #'} • Sec {u.section || 'N/A'} • {u.year || 'N/A'})
+                                  </span>
+                                </div>
+                                <button
+                                  className="btn btn-danger"
+                                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.78rem', height: 'auto' }}
+                                  onClick={() => toggleParticipant(u.id)}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ) : null;
+                          })}
+                          {selectedParticipants.length === 0 && (
+                            <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                              No participants selected. Choose a student above and click "+ Add".
                             </div>
-                          ) : null;
-                        })}
-                        {selectedParticipants.length === 0 && <span style={{ color: 'var(--text-muted)' }}>No participants added yet.</span>}
+                          )}
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button className="btn btn-primary" onClick={() => saveParticipants(currentViewingForm.id)}>Save</button>
-                        <button className="btn btn-secondary" onClick={() => { setEditingParticipants(null); setParticipantInput(''); setPartYear(''); setPartSection(''); }}>Cancel</button>
+
+                      {/* Buttons */}
+                      <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                        <button className="btn btn-secondary" onClick={() => { setEditingParticipants(null); setParticipantInput(''); setPartYear(''); setPartSection(''); }}>
+                          Cancel
+                        </button>
+                        <button className="btn btn-primary" onClick={() => saveParticipants(currentViewingForm.id)}>
+                          Save Participants
+                        </button>
                       </div>
                     </div>
                   ) : (
-                    <p style={{ fontSize: '0.9rem' }}>
-                      {currentViewingForm.participants.length > 0
-                        ? currentViewingForm.participants.map(p => p.username).join(', ')
-                        : 'No participants assigned'}
-                    </p>
+                    <div style={{ marginTop: '0.5rem' }}>
+                      {currentViewingForm.participants && currentViewingForm.participants.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                          {currentViewingForm.participants.map(p => (
+                            <div
+                              key={p.id}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.4rem',
+                                padding: '0.35rem 0.75rem',
+                                borderRadius: '20px',
+                                fontSize: '0.85rem',
+                                fontWeight: 500,
+                                background: 'rgba(79, 70, 229, 0.12)',
+                                color: 'var(--text)',
+                                border: '1px solid rgba(79, 70, 229, 0.25)'
+                              }}
+                            >
+                              <span>👤</span>
+                              <span>{p.username}</span>
+                              {p.roll_number && (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                  ({p.roll_number})
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>
+                          No participants assigned
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -1665,11 +1834,39 @@ const FormDetails = () => {
 
                 <div style={{ fontSize: '0.9rem', marginBottom: '1.25rem' }}>
                   <h4 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Participants</h4>
-                  <p style={{ wordBreak: 'break-word' }}>
-                    {currentViewingForm.participants && currentViewingForm.participants.length > 0
-                      ? currentViewingForm.participants.map(p => p.username).join(', ')
-                      : 'No participants assigned'}
-                  </p>
+                  {currentViewingForm.participants && currentViewingForm.participants.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      {currentViewingForm.participants.map(p => (
+                        <div
+                          key={p.id}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            padding: '0.35rem 0.75rem',
+                            borderRadius: '20px',
+                            fontSize: '0.85rem',
+                            fontWeight: 500,
+                            background: 'rgba(79, 70, 229, 0.12)',
+                            color: 'var(--text)',
+                            border: '1px solid rgba(79, 70, 229, 0.25)'
+                          }}
+                        >
+                          <span>👤</span>
+                          <span>{p.username}</span>
+                          {p.roll_number && (
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              ({p.roll_number})
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>
+                      No participants assigned
+                    </p>
+                  )}
                 </div>
 
                 <div style={{ fontSize: '0.9rem', marginBottom: '1.25rem' }}>

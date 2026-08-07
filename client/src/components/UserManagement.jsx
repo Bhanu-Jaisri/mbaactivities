@@ -62,9 +62,10 @@ const UserManagement = () => {
     }
   };
 
-  // Filter State
+  // Filter & Search State
   const [filterType, setFilterType] = useState('All'); // 'All', 'Staff', '1st Year', '2nd Year'
   const [filterSection, setFilterSection] = useState(''); // '', 'A', 'B', 'C', 'D'
+  const [searchQuery, setSearchQuery] = useState('');
 
   const handleFilterTypeChange = (type) => {
     setFilterType(type);
@@ -72,16 +73,26 @@ const UserManagement = () => {
   };
 
   const filteredUsers = users.filter(u => {
-    if (filterType === 'All') return true;
     if (filterType === 'Staff') {
-      return u.role === 'Staff' || u.role === 'Admin';
+      if (!(u.role === 'Staff' || u.role === 'Admin')) return false;
+    } else if (filterType === '1st Year') {
+      if (!(u.role === 'Student' && u.year === '1st Year' && (filterSection ? u.section === filterSection : true))) return false;
+    } else if (filterType === '2nd Year') {
+      if (!(u.role === 'Student' && u.year === '2nd Year' && (filterSection ? u.section === filterSection : true))) return false;
     }
-    if (filterType === '1st Year') {
-      return u.role === 'Student' && u.year === '1st Year' && (filterSection ? u.section === filterSection : true);
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const nameMatch = (u.username || '').toLowerCase().includes(q);
+      const rollMatch = (u.roll_number || '').toLowerCase().includes(q);
+      const subRoleMatch = (u.sub_role || '').toLowerCase().includes(q);
+      const roleMatch = (u.role || '').toLowerCase().includes(q);
+      const sectionMatch = (u.section || '').toLowerCase().includes(q);
+      const yearMatch = (u.year || '').toLowerCase().includes(q);
+
+      return nameMatch || rollMatch || subRoleMatch || roleMatch || sectionMatch || yearMatch;
     }
-    if (filterType === '2nd Year') {
-      return u.role === 'Student' && u.year === '2nd Year' && (filterSection ? u.section === filterSection : true);
-    }
+
     return true;
   });
 
@@ -610,18 +621,38 @@ Sl. Roll No Name of the Student
           )}
         </div>
 
-        {/* Filter Tabs */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-          {['All', 'Staff', '1st Year', '2nd Year'].map((type) => (
-            <button
-              key={type}
-              onClick={() => handleFilterTypeChange(type)}
-              className={`btn ${filterType === type ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ padding: '0.4rem 1rem', fontSize: '0.875rem' }}
-            >
-              {type}
-            </button>
-          ))}
+        {/* Search & Filter Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {['All', 'Staff', '1st Year', '2nd Year'].map((type) => (
+              <button
+                key={type}
+                onClick={() => handleFilterTypeChange(type)}
+                className={`btn ${filterType === type ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '0.4rem 1rem', fontSize: '0.875rem' }}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ minWidth: '240px', flex: '1', maxWidth: '380px' }}>
+            <input
+              type="text"
+              className="input"
+              placeholder="🔍 Search by Name, Roll No, or Sub-Role..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.45rem 0.85rem',
+                fontSize: '0.875rem',
+                background: 'var(--input-bg)',
+                border: '1px solid var(--surface-border)',
+                borderRadius: '8px'
+              }}
+            />
+          </div>
         </div>
 
         {/* Section selection for 1st/2nd Year */}
