@@ -250,12 +250,73 @@ const FormDetails = () => {
     if (user.role === 'Staff' || user.role === 'Admin') return true;
     const sub = (user.sub_role || '').toLowerCase();
     const isExecOrSec = sub.includes('exec') || sub.includes('secret') || sub.includes('secert');
-    const isOrg = [form.organizer_1, form.organizer_2, form.organizer_3].includes(user.id);
     const isCreatorSec = (sub.includes('secret') || sub.includes('secert')) && form.created_by === user.id;
 
-    if (isOrg || isCreatorSec) return true;
+    if (isCreatorSec) return true;
     if (isExecOrSec && isAssociationAligned(form.created_by_sub_role, user.sub_role)) return true;
     return false;
+  };
+
+  const normalizeDateStr = (dateStr) => {
+    if (!dateStr) return '';
+    const str = String(dateStr).trim();
+    if (str.includes('T')) return str.split('T')[0];
+    if (str.includes('-')) {
+      const parts = str.split('-');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        } else if (parts[2].length === 4) {
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+    }
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        } else if (parts[2].length === 4) {
+          let p1 = parseInt(parts[0], 10);
+          let p2 = parseInt(parts[1], 10);
+          if (p1 > 12) {
+            return `${parts[2]}-${String(p2).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+          } else {
+            return `${parts[2]}-${String(p1).padStart(2, '0')}-${String(p2).padStart(2, '0')}`;
+          }
+        }
+      }
+    }
+    return str;
+  };
+
+  const getConflictInfoForStudent = (studentId, date, currentFormId) => {
+    if (!date || !studentId) return null;
+    const targetDate = normalizeDateStr(date);
+    if (!targetDate) return null;
+
+    const currentForm = forms.find(f => f.id === currentFormId);
+    if (currentForm) {
+      const orgs = [currentForm.organizer_1, currentForm.organizer_2, currentForm.organizer_3].filter(Boolean);
+      if (orgs.includes(studentId)) {
+        return 'Organizer of this event';
+      }
+    }
+
+    for (const f of forms) {
+      if (f.is_completed) continue;
+      if (f.id === currentFormId) continue;
+      if (normalizeDateStr(f.event_date) === targetDate) {
+        const orgs = [f.organizer_1, f.organizer_2, f.organizer_3].filter(Boolean);
+        if (orgs.includes(studentId)) {
+          return `Organizer in "${f.event_name}"`;
+        }
+        if (f.participants && f.participants.some(p => p.id === studentId)) {
+          return `Participant in "${f.event_name}"`;
+        }
+      }
+    }
+    return null;
   };
 
   const canEditDateTime = (form) => {
@@ -620,15 +681,22 @@ const FormDetails = () => {
 
   const addParticipantByRoll = () => {
     if (!participantInput) return;
-    const user = users.find(u => u.roll_number === participantInput || u.username === participantInput);
-    if (!user) {
+    const targetUser = users.find(u => u.roll_number === participantInput || u.username === participantInput);
+    if (!targetUser) {
       alert('Participant not found. Please check the roll number.');
       return;
     }
-    const idStr = user.id.toString();
-    if (!selectedParticipants.includes(idStr)) {
-      setSelectedParticipants([...selectedParticipants, idStr]);
+    const conflict = currentViewingForm ? getConflictInfoForStudent(targetUser.id, currentViewingForm.event_date, currentViewingForm.id) : null;
+    if (conflict) {
+      alert(`Cannot add ${targetUser.username}: ${conflict} on ${currentViewingForm?.event_date ? new Date(currentViewingForm.event_date).toLocaleDateString() : 'this date'}.`);
+      return;
     }
+    const idStr = targetUser.id.toString();
+    if (selectedParticipants.includes(idStr)) {
+      alert(`${targetUser.username} is already added as a participant.`);
+      return;
+    }
+    setSelectedParticipants([...selectedParticipants, idStr]);
     setParticipantInput('');
   };
 
@@ -649,7 +717,9 @@ const FormDetails = () => {
   };
 
   const isOrganizer = (form) => {
-    return [form.organizer_1, form.organizer_2, form.organizer_3].includes(user.id);
+    if (!form || !user || !user.id) return false;
+    const orgs = [form.organizer_1, form.organizer_2, form.organizer_3].filter(Boolean).map(String);
+    return orgs.includes(user.id.toString());
   };
 
   const canEditPpt = (form) => {
@@ -1386,11 +1456,24 @@ const FormDetails = () => {
                               if (partSection && u.section !== partSection) return false;
                               return true;
                             })
-                            .map(u => (
-                              <option key={u.id} value={u.roll_number || u.username}>
-                                {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'})
-                              </option>
-                            ))
+                            .map(u => {
+                              const isAlreadyAdded = selectedParticipants.includes(u.id.toString());
+                              const conflict = getConflictInfoForStudent(u.id, currentViewingForm?.event_date, currentViewingForm?.id);
+                              const isDisabled = isAlreadyAdded || Boolean(conflict);
+
+                              let statusText = '';
+                              if (isAlreadyAdded) {
+                                statusText = ' - (Already Added)';
+                              } else if (conflict) {
+                                statusText = ` - (${conflict})`;
+                              }
+
+                              return (
+                                <option key={u.id} value={u.roll_number || u.username} disabled={isDisabled}>
+                                  {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'}){statusText}
+                                </option>
+                              );
+                            })
                           }
                         </select>
                         <button className="btn btn-primary" onClick={addParticipantByRoll}>Add</button>
@@ -2081,7 +2164,7 @@ const FormDetails = () => {
                         <tr key={p.id || index} style={{ borderBottom: '1px solid black' }}>
                           <td style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center' }}>{index + 1}</td>
                           <td style={{ padding: '0.5rem', border: '1px solid black', fontWeight: '500' }}>{p.username || p.name || 'N/A'}</td>
-                          <td style={{ padding: '0.5rem', border: '1px solid black' }}>{p.roll_no || p.username || 'N/A'}</td>
+                          <td style={{ padding: '0.5rem', border: '1px solid black' }}>{p.roll_number || p.roll_no || 'N/A'}</td>
                           <td style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center' }}>{p.year || '1st Year'}</td>
                           <td style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center' }}>{p.section || 'A'}</td>
                         </tr>

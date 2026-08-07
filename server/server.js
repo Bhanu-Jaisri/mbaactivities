@@ -239,11 +239,11 @@ const authorizeSubRole = (...allowedSubRoles) => {
       if (!req.user.sub_role) return false;
       const userSub = req.user.sub_role.toLowerCase();
       const allow = allowed.toLowerCase();
-      
+
       // Dynamic support for spelling variations of secretary/executive
       if (allow.includes('secret') && (userSub.includes('secret') || userSub.includes('secert'))) return true;
       if (allow.includes('exec') && userSub.includes('exec')) return true;
-      
+
       if (userSub === allow) return true;
       return userSub.includes(allow);
     });
@@ -274,7 +274,7 @@ app.post('/api/auth/login', async (req, res) => {
       console.log('Student tried to log in using username instead of roll number');
       return res.status(400).json({ error: 'Students must log in using their Roll Number' });
     }
-    
+
     // Direct plain-text password comparison
     const validPassword = password === user.password_hash;
     if (!validPassword) {
@@ -308,7 +308,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
 
 app.post('/api/users', authenticateToken, async (req, res) => {
   const { username, password, role, sub_role, roll_number, section, year } = req.body;
-  
+
   // Logic for creation permissions:
   // Admin can create Staff
   // Staff can create Students (including Secretary & Executive)
@@ -570,10 +570,10 @@ app.delete('/api/forms/:id', authenticateToken, async (req, res) => {
     if (formCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Form not found' });
     }
-    
+
     const form = formCheck.rows[0];
     const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
-    
+
     if (form.is_completed) {
       // Completed forms can only be deleted by Staff or Admin
       if (!isStaffOrAdmin) {
@@ -632,7 +632,7 @@ app.get('/api/forms', authenticateToken, async (req, res) => {
       ORDER BY f.event_date ASC, f.event_time ASC, f.created_at ASC
     `;
     const formsResult = await db.query(query);
-    
+
     // Fetch participants for all forms
     const partsResult = await db.query(`
       SELECT fp.form_id, u.id, u.username, u.section, u.sub_role, u.roll_number, u.year
@@ -670,11 +670,10 @@ app.put('/api/forms/:id/participants', authenticateToken, async (req, res) => {
     const userSubRoleLower = (req.user.sub_role || '').toLowerCase();
     const isExecutiveOrSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('exec') || userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && isAssociationAligned(form.creator_sub_role, req.user.sub_role));
     const isCreatorSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && form.created_by === req.user.id);
-    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
     const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
 
-    if (!isExecutiveOrSecretary && !isCreatorSecretary && !isOrganizer && !isStaffOrAdmin) {
-      return res.status(403).json({ error: 'Unauthorized to edit participants' });
+    if (!isExecutiveOrSecretary && !isCreatorSecretary && !isStaffOrAdmin) {
+      return res.status(403).json({ error: 'Unauthorized to edit participants. Only Executives, Secretaries, and Staff/Admin can edit participants.' });
     }
 
     // 1. Check if any participant is already an organizer of this form
@@ -769,14 +768,15 @@ app.put('/api/forms/:id/rounds', authenticateToken, authorizeRole('Student'), as
   try {
     const formCheck = await db.query('SELECT status, organizer_1, organizer_2, organizer_3 FROM event_forms WHERE id = $1', [id]);
     if (formCheck.rows.length === 0) return res.status(404).json({ error: 'Form not found' });
-    
+
     const form = formCheck.rows[0];
     if (form.status === 'Approved') {
       return res.status(403).json({ error: 'Cannot edit rounds on an approved form' });
     }
 
     // Check if the current user is one of the organizers
-    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
+    const orgs = [form.organizer_1, form.organizer_2, form.organizer_3].filter(Boolean).map(String);
+    const isOrganizer = orgs.includes(String(req.user.id));
     if (!isOrganizer) {
       return res.status(403).json({ error: 'Only organizers can edit rounds' });
     }
@@ -830,13 +830,14 @@ app.put('/api/forms/:id/ppt', authenticateToken, upload.single('ppt'), async (re
     if (formCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Form not found' });
     }
-    
+
     const form = formCheck.rows[0];
     if (form.is_completed) {
       return res.status(403).json({ error: 'Cannot upload PPT to a completed form' });
     }
 
-    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
+    const orgs = [form.organizer_1, form.organizer_2, form.organizer_3].filter(Boolean).map(String);
+    const isOrganizer = orgs.includes(String(req.user.id));
     if (!isOrganizer) {
       return res.status(403).json({ error: 'Only assigned organizers of this event can upload or update the PPT.' });
     }

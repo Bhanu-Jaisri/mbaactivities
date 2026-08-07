@@ -25,20 +25,83 @@ const FormCreation = () => {
   const [org3Section, setOrg3Section] = useState('');
 
   const [users, setUsers] = useState([]);
+  const [forms, setForms] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Need to fetch users to select organizers
-    const fetchUsers = async () => {
+    const fetchData = async () => {
       try {
-        const res = await api.get('/users');
-        setUsers(res.data);
+        const [usersRes, formsRes] = await Promise.all([
+          api.get('/users'),
+          api.get('/forms')
+        ]);
+        setUsers(usersRes.data);
+        setForms(formsRes.data);
       } catch (err) {
         console.error(err);
       }
     };
-    fetchUsers();
+    fetchData();
   }, []);
+
+  const normalizeDateStr = (dateStr) => {
+    if (!dateStr) return '';
+    const str = String(dateStr).trim();
+    if (str.includes('T')) return str.split('T')[0];
+    if (str.includes('-')) {
+      const parts = str.split('-');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        } else if (parts[2].length === 4) {
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+    }
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        } else if (parts[2].length === 4) {
+          let p1 = parseInt(parts[0], 10);
+          let p2 = parseInt(parts[1], 10);
+          if (p1 > 12) {
+            return `${parts[2]}-${String(p2).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+          } else {
+            return `${parts[2]}-${String(p1).padStart(2, '0')}-${String(p2).padStart(2, '0')}`;
+          }
+        }
+      }
+    }
+    return str;
+  };
+
+  const getConflictInfoForStudent = (student, currentOrgRole) => {
+    const studentVal = student.roll_number || student.username;
+    
+    if (currentOrgRole !== 'org1' && org1 === studentVal) return 'Selected as Organizer 1';
+    if (currentOrgRole !== 'org2' && org2 === studentVal) return 'Selected as Organizer 2';
+    if (currentOrgRole !== 'org3' && org3 === studentVal) return 'Selected as Organizer 3';
+
+    if (!eventDate) return null;
+    const targetDate = normalizeDateStr(eventDate);
+    if (!targetDate) return null;
+
+    for (const f of forms) {
+      if (f.is_completed) continue;
+      if (normalizeDateStr(f.event_date) === targetDate) {
+        const orgs = [f.organizer_1, f.organizer_2, f.organizer_3].filter(Boolean);
+        if (orgs.includes(student.id)) {
+          return `Organizer in "${f.event_name}"`;
+        }
+        if (f.participants && f.participants.some(p => p.id === student.id)) {
+          return `Participant in "${f.event_name}"`;
+        }
+      }
+    }
+    return null;
+  };
 
   const getFilteredStudents = (selectedYear, selectedSection) => {
     return users.filter(u => {
@@ -182,11 +245,14 @@ const FormCreation = () => {
             required 
           >
             <option value="">Select Student</option>
-            {filteredStudents1.map(u => (
-              <option key={u.id} value={u.roll_number || u.username}>
-                {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'})
-              </option>
-            ))}
+            {filteredStudents1.map(u => {
+              const conflict = getConflictInfoForStudent(u, 'org1');
+              return (
+                <option key={u.id} value={u.roll_number || u.username} disabled={Boolean(conflict)}>
+                  {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'}){conflict ? ` - (${conflict})` : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
         
@@ -228,11 +294,14 @@ const FormCreation = () => {
             onChange={e => setOrg2(e.target.value)} 
           >
             <option value="">Select Student (Optional)</option>
-            {filteredStudents2.map(u => (
-              <option key={u.id} value={u.roll_number || u.username}>
-                {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'})
-              </option>
-            ))}
+            {filteredStudents2.map(u => {
+              const conflict = getConflictInfoForStudent(u, 'org2');
+              return (
+                <option key={u.id} value={u.roll_number || u.username} disabled={Boolean(conflict)}>
+                  {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'}){conflict ? ` - (${conflict})` : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
 
@@ -274,11 +343,14 @@ const FormCreation = () => {
             onChange={e => setOrg3(e.target.value)} 
           >
             <option value="">Select Student (Optional)</option>
-            {filteredStudents3.map(u => (
-              <option key={u.id} value={u.roll_number || u.username}>
-                {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'})
-              </option>
-            ))}
+            {filteredStudents3.map(u => {
+              const conflict = getConflictInfoForStudent(u, 'org3');
+              return (
+                <option key={u.id} value={u.roll_number || u.username} disabled={Boolean(conflict)}>
+                  {u.username} ({u.roll_number || 'No Roll #'} - Sec {u.section || 'N/A'} - {u.year || 'N/A'}){conflict ? ` - (${conflict})` : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
 
