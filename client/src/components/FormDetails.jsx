@@ -2022,35 +2022,36 @@ const FormDetails = () => {
                   </div>
 
                   {/* Two-Column Split Layout */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '38% 59%', gap: '3%', alignItems: 'start' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '18% 80%', gap: '2%', alignItems: 'start' }}>
 
-                    {/* LEFT COLUMN: Agenda Office Bearers */}
-                    <div style={{ borderRight: '1.5px solid #cbd5e1', paddingRight: '1.25rem' }}>
+                    {/* LEFT COLUMN: Agenda Office Bearers (Minimized Left Space/Width) */}
+                    <div style={{ borderRight: '1.5px solid #cbd5e1', paddingRight: '0.5rem' }}>
                       {categories.map(catGroup => (
-                        <div key={catGroup.title} style={{ marginBottom: '1.15rem' }}>
+                        <div key={catGroup.title} style={{ marginBottom: '0.4rem' }}>
                           <div style={{
                             fontWeight: 'bold',
-                            fontSize: '10pt',
+                            fontSize: '7.5pt',
                             color: '#1e40af',
                             borderBottom: '1px dashed #cbd5e1',
-                            paddingBottom: '0.2rem',
-                            marginBottom: '0.4rem',
-                            textTransform: 'uppercase'
+                            paddingBottom: '0.1rem',
+                            marginBottom: '0.2rem',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.2px'
                           }}>
                             {catGroup.title}
                           </div>
                           {catGroup.items.length === 0 ? (
-                            <div style={{ fontSize: '9pt', color: '#64748b', fontStyle: 'italic' }}>
+                            <div style={{ fontSize: '7pt', color: '#64748b', fontStyle: 'italic' }}>
                               No member assigned
                             </div>
                           ) : (
                             catGroup.items.map(item => (
-                              <div key={item.id} style={{ marginBottom: '0.4rem' }}>
-                                <div style={{ fontSize: '9.5pt', fontWeight: '600', color: 'black' }}>
+                              <div key={item.id} style={{ marginBottom: '0.15rem' }}>
+                                <div style={{ fontSize: '7.5pt', fontWeight: '600', color: 'black', lineHeight: '1.2' }}>
                                   {item.name}
                                 </div>
                                 {item.designation && (
-                                  <div style={{ fontSize: '8.5pt', color: '#475569' }}>
+                                  <div style={{ fontSize: '7pt', color: '#475569', lineHeight: '1.1' }}>
                                     {item.designation}
                                   </div>
                                 )}
@@ -2093,8 +2094,9 @@ const FormDetails = () => {
                           <tr style={{ background: '#f1f5f9', borderBottom: '1.5px solid black' }}>
                             <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center', width: '35px' }}>S.No</th>
                             <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left' }}>Event Name</th>
-                            <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left', width: '100px' }}>Timing</th>
-                            <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left' }}>Organizers</th>
+                            <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left', whiteSpace: 'nowrap' }}>Timing</th>
+                            <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left' }}>Organiser</th>
+                            <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left', whiteSpace: 'nowrap' }}>Roll Number</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2106,15 +2108,15 @@ const FormDetails = () => {
                               <td style={{ padding: '0.5rem', border: '1px solid black', fontWeight: 'bold', color: 'black' }}>
                                 {form.event_name}
                               </td>
-                              <td style={{ padding: '0.5rem', border: '1px solid black', fontWeight: '500' }}>
+                              <td style={{ padding: '0.5rem', border: '1px solid black', fontWeight: '500', whiteSpace: 'nowrap' }}>
                                 {form.event_time || 'N/A'}
                               </td>
                               <td style={{ padding: '0.5rem', border: '1px solid black' }}>
                                 {(() => {
                                   const orgs = [
-                                    { name: form.org1_name, roll: form.org1_roll, year: form.org1_year, sec: form.org1_section },
-                                    { name: form.org2_name, roll: form.org2_roll, year: form.org2_year, sec: form.org2_section },
-                                    { name: form.org3_name, roll: form.org3_roll, year: form.org3_year, sec: form.org3_section },
+                                    { name: form.org1_name, roll: form.org1_roll },
+                                    { name: form.org2_name, roll: form.org2_roll },
+                                    { name: form.org3_name, roll: form.org3_roll },
                                   ].filter(o => Boolean(o.name));
 
                                   if (orgs.length === 0) return <span style={{ color: '#64748b', fontStyle: 'italic' }}>N/A</span>;
@@ -2126,14 +2128,40 @@ const FormDetails = () => {
                                           fontSize: '8.5pt',
                                           color: 'black',
                                           lineHeight: '1.4',
-                                          marginBottom: i < orgs.length - 1 ? '0.4rem' : 0,
-                                          paddingBottom: i < orgs.length - 1 ? '0.4rem' : 0,
-                                          borderBottom: i < orgs.length - 1 ? '1px dashed #cbd5e1' : 'none'
+                                          marginBottom: i < orgs.length - 1 ? '0.3rem' : 0,
+                                          paddingBottom: i < orgs.length - 1 ? '0.3rem' : 0,
+                                          borderBottom: i < orgs.length - 1 ? '1px dashed #e2e8f0' : 'none'
                                         }}>
-                                          <div><strong>Name:</strong> {org.name || org.roll || 'N/A'}</div>
-                                          <div><strong>Roll No:</strong> {org.roll || org.name || 'N/A'}</div>
-                                          <div><strong>Year:</strong> {org.year || '1st Year'}</div>
-                                          <div><strong>Section:</strong> {org.sec || 'A'}</div>
+                                          {org.name || 'N/A'}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                              <td style={{ padding: '0.5rem', border: '1px solid black' }}>
+                                {(() => {
+                                  const orgs = [
+                                    { name: form.org1_name, roll: form.org1_roll },
+                                    { name: form.org2_name, roll: form.org2_roll },
+                                    { name: form.org3_name, roll: form.org3_roll },
+                                  ].filter(o => Boolean(o.name));
+
+                                  if (orgs.length === 0) return <span style={{ color: '#64748b', fontStyle: 'italic' }}>N/A</span>;
+
+                                  return (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                      {orgs.map((org, i) => (
+                                        <div key={i} style={{
+                                          fontSize: '8.5pt',
+                                          color: 'black',
+                                          lineHeight: '1.4',
+                                          whiteSpace: 'nowrap',
+                                          marginBottom: i < orgs.length - 1 ? '0.3rem' : 0,
+                                          paddingBottom: i < orgs.length - 1 ? '0.3rem' : 0,
+                                          borderBottom: i < orgs.length - 1 ? '1px dashed #e2e8f0' : 'none'
+                                        }}>
+                                          {org.roll || 'N/A'}
                                         </div>
                                       ))}
                                     </div>
