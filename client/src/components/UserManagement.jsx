@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
 import { useAuth } from '../AuthContext';
-import { Trash2, UserPlus, Edit3, Check, X } from 'lucide-react';
+import { Trash2, UserPlus, Edit3, Check, X, Key, Lock } from 'lucide-react';
 
 const UserManagement = () => {
   const { user } = useAuth();
@@ -25,6 +25,12 @@ const UserManagement = () => {
   const [editingSubRole, setEditingSubRole] = useState('Regular');
   const [editingSection, setEditingSection] = useState('A');
   const [editingYear, setEditingYear] = useState('1st Year');
+  const [editingPassword, setEditingPassword] = useState('');
+
+  // Staff Reset Password Modal State
+  const [resetPasswordModalUser, setResetPasswordModalUser] = useState(null);
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
 
   const handleEditClick = (u) => {
     setEditingUserId(u.id);
@@ -32,6 +38,7 @@ const UserManagement = () => {
     setEditingSubRole(u.sub_role || 'Regular');
     setEditingSection(u.section || 'A');
     setEditingYear(u.year || '1st Year');
+    setEditingPassword('');
   };
 
   const handleCancelEdit = () => {
@@ -40,6 +47,7 @@ const UserManagement = () => {
     setEditingSubRole('Regular');
     setEditingSection('A');
     setEditingYear('1st Year');
+    setEditingPassword('');
   };
 
   const handleSaveEdit = async (uId) => {
@@ -48,19 +56,52 @@ const UserManagement = () => {
       return;
     }
     try {
-      await api.put(`/users/${uId}`, {
+      const payload = {
         username: editingUsername,
         sub_role: editingSubRole,
         section: editingSection,
         year: editingYear
-      });
+      };
+      if (editingPassword && editingPassword.trim() !== '') {
+        payload.password = editingPassword;
+      }
+      await api.put(`/users/${uId}`, payload);
       setEditingUserId(null);
       setEditingUsername('');
+      setEditingPassword('');
       fetchUsers();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to update student details');
     }
   };
+
+  const handleOpenResetPassword = (u) => {
+    setResetPasswordModalUser(u);
+    setNewResetPassword('');
+  };
+
+  const handleSaveResetPassword = async (e) => {
+    e.preventDefault();
+    if (!newResetPassword || newResetPassword.trim() === '') {
+      alert('New password is required');
+      return;
+    }
+    setResetPasswordLoading(true);
+    try {
+      await api.put(`/users/${resetPasswordModalUser.id}/reset-password`, {
+        newPassword: newResetPassword
+      });
+      alert(`Password for user "${resetPasswordModalUser.username}" updated successfully!`);
+      setResetPasswordModalUser(null);
+      setNewResetPassword('');
+      fetchUsers();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to reset password');
+    } finally {
+      setResetPasswordLoading(false);
+    }
+  };
+
 
   // Filter & Search State
   const [filterType, setFilterType] = useState('All'); // 'All', 'Staff', '1st Year', '2nd Year'
@@ -863,6 +904,9 @@ Sl. Roll No Name of the Student
                             <button onClick={() => handleEditClick(u)} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem' }} title="Edit Student">
                               <Edit3 size={16} />
                             </button>
+                            <button onClick={() => handleOpenResetPassword(u)} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem', color: '#60A5FA', borderColor: 'rgba(96, 165, 250, 0.3)' }} title="Reset User Password">
+                              <Key size={16} />
+                            </button>
                             <button onClick={() => handleDelete(u.id)} className="btn btn-danger" style={{ padding: '0.4rem 0.6rem' }} title="Delete User">
                               <Trash2 size={16} />
                             </button>
@@ -884,8 +928,95 @@ Sl. Roll No Name of the Student
           </table>
         </div>
       </div>
+
+      {resetPasswordModalUser && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'var(--modal-overlay, rgba(15, 23, 42, 0.75))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem',
+            backdropFilter: 'blur(6px)'
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '420px',
+              background: 'var(--modal-bg, #1e293b)',
+              borderRadius: '16px',
+              padding: '1.75rem',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+              border: '1px solid var(--surface-border)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ padding: '0.4rem', borderRadius: '8px', background: 'rgba(96, 165, 250, 0.2)', color: '#60A5FA' }}>
+                  <Key size={20} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600 }}>Reset Password</h3>
+              </div>
+              <button
+                onClick={() => setResetPasswordModalUser(null)}
+                className="btn btn-secondary"
+                style={{ padding: '0.3rem 0.5rem', borderRadius: '8px', color: 'var(--text-muted)' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
+              Enter a new password for <strong style={{ color: 'var(--text)' }}>{resetPasswordModalUser.username}</strong> ({resetPasswordModalUser.roll_number || resetPasswordModalUser.role}).
+            </p>
+
+            <form onSubmit={handleSaveResetPassword}>
+              <div className="input-group" style={{ marginBottom: '1.25rem' }}>
+                <label style={{ fontSize: '0.85rem' }}>New Password</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={newResetPassword}
+                  onChange={(e) => setNewResetPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setResetPasswordModalUser(null)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetPasswordLoading}
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                >
+                  {resetPasswordLoading ? 'Saving...' : 'Reset Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
 
 export default UserManagement;

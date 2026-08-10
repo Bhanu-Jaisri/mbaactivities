@@ -3,16 +3,18 @@ import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../AuthContext';
 import { useTheme } from '../ThemeContext';
-import { LogOut, Users, FileText, PlusCircle, Sun, Moon, Calendar } from 'lucide-react';
+import { LogOut, Users, FileText, PlusCircle, Sun, Moon, Calendar, Key } from 'lucide-react';
 import UserManagement from './UserManagement';
 import FormCreation from './FormCreation';
 import FormDetails from './FormDetails';
 import Agenda from './Agenda';
+import ChangePasswordModal from './ChangePasswordModal';
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   const canManageUsers = user.role === 'Admin' || user.role === 'Staff';
   const userSubRoleLower = (user.sub_role || '').toLowerCase();
@@ -94,13 +96,27 @@ const Dashboard = () => {
           >
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
+          <button 
+            onClick={() => setIsChangePasswordOpen(true)} 
+            className="btn" 
+            style={{ 
+              padding: '0.5rem', 
+              background: 'rgba(79, 70, 229, 0.1)', 
+              color: 'var(--primary)',
+              border: '1px solid var(--surface-border)',
+              borderRadius: '8px'
+            }}
+            title="Change Password"
+          >
+            <Key size={18} />
+          </button>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontWeight: '600' }}>{user.username}</div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {user.role} {user.sub_role ? `(${user.sub_role})` : ''} {user.section ? `- Sec ${user.section}` : ''}{user.year ? ` - ${user.year}` : ''}
             </div>
           </div>
-          <button onClick={logout} className="btn" style={{ padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#FCA5A5' }}>
+          <button onClick={logout} className="btn" style={{ padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#FCA5A5' }} title="Logout">
             <LogOut size={18} />
           </button>
         </div>
@@ -122,8 +138,14 @@ const Dashboard = () => {
           <Route path="/agenda" element={<Agenda />} />
         </Routes>
       </div>
+
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
+      />
     </div>
   );
 };
 
 export default Dashboard;
+

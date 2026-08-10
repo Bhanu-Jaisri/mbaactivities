@@ -496,16 +496,90 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
     const updatedSection = section !== undefined ? section : targetUser.section;
     const updatedYear = year !== undefined ? year : targetUser.year;
 
-    const result = await db.query(
-      'UPDATE users SET username = $1, sub_role = $2, section = $3, year = $4 WHERE id = $5 RETURNING *',
-      [username.trim(), updatedSubRole, updatedSection, updatedYear, id]
-    );
+    let result;
+    if (req.body.password && req.body.password.trim() !== '') {
+      result = await db.query(
+        'UPDATE users SET username = $1, sub_role = $2, section = $3, year = $4, password_hash = $5 WHERE id = $6 RETURNING *',
+        [username.trim(), updatedSubRole, updatedSection, updatedYear, req.body.password, id]
+      );
+    } else {
+      result = await db.query(
+        'UPDATE users SET username = $1, sub_role = $2, section = $3, year = $4 WHERE id = $5 RETURNING *',
+        [username.trim(), updatedSubRole, updatedSection, updatedYear, id]
+      );
+    }
 
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Change Password for Logged-In User
+app.put('/api/auth/change-password', authenticateToken, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current password and new password are required' });
+  }
+
+  if (newPassword.trim().length < 3) {
+    return res.status(400).json({ error: 'New password must be at least 3 characters long' });
+  }
+
+  try {
+    const userRes = await db.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = userRes.rows[0];
+
+    // Plain text comparison as per codebase setup
+    if (user.password_hash !== currentPassword) {
+      return res.status(400).json({ error: 'Incorrect current password' });
+    }
+
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newPassword, req.user.id]);
+    res.json({ message: 'Password updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reset User Password (Staff/Admin only)
+app.put('/api/users/:id/reset-password', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { newPassword } = req.body;
+
+  if (!newPassword || newPassword.trim() === '') {
+    return res.status(400).json({ error: 'New password is required' });
+  }
+
+  try {
+    const targetUserRes = await db.query('SELECT role FROM users WHERE id = $1', [id]);
+    if (targetUserRes.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const targetUser = targetUserRes.rows[0];
+
+    if (targetUser.role === 'Student' && req.user.role !== 'Staff' && req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Only Staff and Admin can reset Student passwords' });
+    }
+    if (targetUser.role === 'Staff' && req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Only Admin can reset Staff passwords' });
+    }
+    if (targetUser.role === 'Admin' && req.user.id !== parseInt(id)) {
+      return res.status(403).json({ error: 'Cannot reset Admin password' });
+    }
+
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newPassword, id]);
+    res.json({ message: 'User password reset successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 app.post('/api/users/bulk-delete', authenticateToken, async (req, res) => {
   const { ids } = req.body;
