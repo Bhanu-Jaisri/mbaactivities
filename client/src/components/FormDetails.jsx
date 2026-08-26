@@ -309,10 +309,6 @@ const FormDetails = () => {
       if (f.is_completed) continue;
       if (f.id === currentFormId) continue;
       if (normalizeDateStr(f.event_date) === targetDate) {
-        const orgs = [f.organizer_1, f.organizer_2, f.organizer_3].filter(Boolean);
-        if (orgs.includes(studentId)) {
-          return `Organizer in "${f.event_name}"`;
-        }
         if (f.participants && f.participants.some(p => p.id === studentId)) {
           return `Participant in "${f.event_name}"`;
         }

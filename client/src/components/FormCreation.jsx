@@ -95,9 +95,6 @@ const FormCreation = () => {
         if (orgs.includes(student.id)) {
           return `Organizer in "${f.event_name}"`;
         }
-        if (f.participants && f.participants.some(p => p.id === student.id)) {
-          return `Participant in "${f.event_name}"`;
-        }
       }
     }
     return null;

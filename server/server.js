@@ -80,7 +80,7 @@ const normalizeDate = (dateStr) => {
   return str;
 };
 
-const checkStudentConflict = async (eventDate, studentIds, ignoreFormId = null) => {
+const checkOrganizerConflict = async (eventDate, studentIds, ignoreFormId = null) => {
   if (!eventDate || !studentIds || studentIds.length === 0) return null;
 
   const validIds = studentIds.filter(id => id != null);
@@ -93,9 +93,29 @@ const checkStudentConflict = async (eventDate, studentIds, ignoreFormId = null) 
     FROM event_forms f
     JOIN users u ON u.id IN (f.organizer_1, f.organizer_2, f.organizer_3)
     WHERE (f.is_completed IS FALSE OR f.is_completed IS NULL) ${ignoreFormId ? 'AND f.id <> $1' : ''}
-    
-    UNION ALL
-    
+  `;
+
+  const params = ignoreFormId ? [ignoreFormId] : [];
+  const result = await db.query(query, params);
+
+  for (const row of result.rows) {
+    if (validIds.includes(row.student_id) && normalizeDate(row.event_date) === targetDate) {
+      return row;
+    }
+  }
+
+  return null;
+};
+
+const checkParticipantConflict = async (eventDate, studentIds, ignoreFormId = null) => {
+  if (!eventDate || !studentIds || studentIds.length === 0) return null;
+
+  const validIds = studentIds.filter(id => id != null);
+  if (validIds.length === 0) return null;
+
+  const targetDate = normalizeDate(eventDate);
+
+  const query = `
     SELECT f.id, f.event_name, f.event_date, u.username, u.id as student_id, 'Participant' as role_type
     FROM event_forms f
     JOIN form_participants fp ON f.id = fp.form_id
@@ -619,10 +639,10 @@ app.post('/api/forms', authenticateToken, authorizeSubRole('Secretary'), async (
       });
     }
 
-    const conflict = await checkStudentConflict(event_date, [organizer_1, organizer_2, organizer_3]);
+    const conflict = await checkOrganizerConflict(event_date, [organizer_1, organizer_2, organizer_3]);
     if (conflict) {
       return res.status(400).json({
-        error: `Student ${conflict.username} is already an ${conflict.role_type.toLowerCase()} in event "${conflict.event_name}" on ${event_date}.`
+        error: `Student ${conflict.username} is already an organizer in event "${conflict.event_name}" on ${event_date}.`
       });
     }
 
@@ -759,10 +779,10 @@ app.put('/api/forms/:id/participants', authenticateToken, async (req, res) => {
     }
 
     // 2. Check if any participant has a conflict in another event on the same date
-    const conflict = await checkStudentConflict(form.event_date, student_ids, id);
+    const conflict = await checkParticipantConflict(form.event_date, student_ids, id);
     if (conflict) {
       return res.status(400).json({
-        error: `Student ${conflict.username} is already an ${conflict.role_type.toLowerCase()} in event "${conflict.event_name}" on ${form.event_date}.`
+        error: `Student ${conflict.username} is already a participant in event "${conflict.event_name}" on ${form.event_date}.`
       });
     }
 
@@ -804,11 +824,6 @@ app.put('/api/forms/:id/datetime', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized to edit date and time' });
     }
 
-    // Check conflict on the new event_date for organizers and participants
-    const partsRes = await db.query('SELECT student_id FROM form_participants WHERE form_id = $1', [id]);
-    const participantIds = partsRes.rows.map(r => r.student_id);
-    const allStudentIds = [form.organizer_1, form.organizer_2, form.organizer_3, ...participantIds].filter(oid => oid != null);
-
     const timeConflict = await checkEventTimeConflict(event_date, event_time, id);
     if (timeConflict) {
       return res.status(400).json({
@@ -816,10 +831,22 @@ app.put('/api/forms/:id/datetime', authenticateToken, async (req, res) => {
       });
     }
 
-    const conflict = await checkStudentConflict(event_date, allStudentIds, id);
-    if (conflict) {
+    // Check organizer conflict on the new event_date
+    const organizerIds = [form.organizer_1, form.organizer_2, form.organizer_3].filter(oid => oid != null);
+    const orgConflict = await checkOrganizerConflict(event_date, organizerIds, id);
+    if (orgConflict) {
       return res.status(400).json({
-        error: `Student ${conflict.username} is already an ${conflict.role_type.toLowerCase()} in event "${conflict.event_name}" on ${event_date}.`
+        error: `Student ${orgConflict.username} is already an organizer in event "${orgConflict.event_name}" on ${event_date}.`
+      });
+    }
+
+    // Check participant conflict on the new event_date
+    const partsRes = await db.query('SELECT student_id FROM form_participants WHERE form_id = $1', [id]);
+    const participantIds = partsRes.rows.map(r => r.student_id);
+    const partConflict = await checkParticipantConflict(event_date, participantIds, id);
+    if (partConflict) {
+      return res.status(400).json({
+        error: `Student ${partConflict.username} is already a participant in event "${partConflict.event_name}" on ${event_date}.`
       });
     }
 
