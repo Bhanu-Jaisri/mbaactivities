@@ -630,7 +630,7 @@ app.post('/api/users/bulk-delete', authenticateToken, async (req, res) => {
 
 // Create Form (Secretary only)
 app.post('/api/forms', authenticateToken, authorizeSubRole('Secretary'), async (req, res) => {
-  const { event_name, organizer_1, organizer_2, organizer_3, event_date, event_time, created_date } = req.body;
+  const { event_name, organizer_1, organizer_2, organizer_3, event_date, event_time, created_date, round_1_details, round_2_details, round_3_details } = req.body;
   try {
     const timeConflict = await checkEventTimeConflict(event_date, event_time);
     if (timeConflict) {
@@ -647,8 +647,8 @@ app.post('/api/forms', authenticateToken, authorizeSubRole('Secretary'), async (
     }
 
     const result = await db.query(
-      'INSERT INTO event_forms (event_name, created_by, organizer_1, organizer_2, organizer_3, event_date, event_time, created_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-      [event_name, req.user.id, organizer_1, organizer_2 || null, organizer_3 || null, event_date || null, event_time || null, created_date || null]
+      'INSERT INTO event_forms (event_name, created_by, organizer_1, organizer_2, organizer_3, event_date, event_time, created_date, round_1_details, round_2_details, round_3_details) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
+      [event_name, req.user.id, organizer_1, organizer_2 || null, organizer_3 || null, event_date || null, event_time || null, created_date || null, round_1_details || null, round_2_details || null, round_3_details || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -815,12 +815,13 @@ app.put('/api/forms/:id/datetime', authenticateToken, async (req, res) => {
     }
 
     const userSubRoleLower = (req.user.sub_role || '').toLowerCase();
+    const isSecOrExec = (req.user.role === 'Student' && (userSubRoleLower.includes('exec') || userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')));
     const isCreatorSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && form.created_by === req.user.id);
-    const isExecutiveOrSecretary = (req.user.role === 'Student' && (userSubRoleLower.includes('exec') || userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert')) && isAssociationAligned(form.creator_sub_role, req.user.sub_role));
-    const isOrganizer = [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id);
+    const isExecutiveOrSecretary = (req.user.role === 'Student' && isSecOrExec && isAssociationAligned(form.creator_sub_role, req.user.sub_role));
+    const isOrganizerSecOrExec = (req.user.role === 'Student' && isSecOrExec && [form.organizer_1, form.organizer_2, form.organizer_3].includes(req.user.id));
     const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
 
-    if (!isCreatorSecretary && !isExecutiveOrSecretary && !isOrganizer && !isStaffOrAdmin) {
+    if (!isCreatorSecretary && !isExecutiveOrSecretary && !isOrganizerSecOrExec && !isStaffOrAdmin) {
       return res.status(403).json({ error: 'Unauthorized to edit date and time' });
     }
 
@@ -860,29 +861,31 @@ app.put('/api/forms/:id/datetime', authenticateToken, async (req, res) => {
   }
 });
 
-// Edit Rounds (Organizers only)
-app.put('/api/forms/:id/rounds', authenticateToken, authorizeRole('Student'), async (req, res) => {
+// Edit / Add Rounds (Assigned Organizers only)
+app.put('/api/forms/:id/rounds', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { round_1_details, round_2_details, round_3_details } = req.body;
   try {
-    const formCheck = await db.query('SELECT status, organizer_1, organizer_2, organizer_3 FROM event_forms WHERE id = $1', [id]);
+    const formCheck = await db.query('SELECT status, is_completed, organizer_1, organizer_2, organizer_3 FROM event_forms WHERE id = $1', [id]);
     if (formCheck.rows.length === 0) return res.status(404).json({ error: 'Form not found' });
 
     const form = formCheck.rows[0];
-    if (form.status === 'Approved') {
-      return res.status(403).json({ error: 'Cannot edit rounds on an approved form' });
+    if (form.is_completed) {
+      return res.status(403).json({ error: 'Cannot edit rounds on a completed form' });
     }
 
-    // Check if the current user is one of the organizers
+    // Check if the current user is one of the assigned organizers
     const orgs = [form.organizer_1, form.organizer_2, form.organizer_3].filter(Boolean).map(String);
     const isOrganizer = orgs.includes(String(req.user.id));
-    if (!isOrganizer) {
-      return res.status(403).json({ error: 'Only organizers can edit rounds' });
+    const isStaffOrAdmin = (req.user.role === 'Admin' || req.user.role === 'Staff');
+
+    if (!isOrganizer && !isStaffOrAdmin) {
+      return res.status(403).json({ error: 'Only assigned organizers of this event can add or edit rounds.' });
     }
 
     const result = await db.query(
-      'UPDATE event_forms SET round_1_details = COALESCE($1, round_1_details), round_2_details = COALESCE($2, round_2_details), round_3_details = COALESCE($3, round_3_details) WHERE id = $4 RETURNING *',
-      [round_1_details, round_2_details, round_3_details, id]
+      'UPDATE event_forms SET round_1_details = $1, round_2_details = $2, round_3_details = $3 WHERE id = $4 RETURNING *',
+      [round_1_details || null, round_2_details || null, round_3_details || null, id]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -911,17 +914,13 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
   fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (ext === '.ppt' || ext === '.pptx') {
-      cb(null, true);
-    } else {
-      cb(new Error('Only .ppt and .pptx files are allowed!'), false);
-    }
+    // Allow all file types (zip, pdf, png, jpg, ppt, doc, etc.)
+    cb(null, true);
   },
-  limits: { fileSize: 25 * 1024 * 1024 } // 25MB limit
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 });
 
-// Upload PPT (Organizers, Creator Secretary, Aligned Executive, Staff/Admin)
+// Upload Attachment File (Organizers, Creator Secretary, Aligned Executive, Staff/Admin)
 app.put('/api/forms/:id/ppt', authenticateToken, upload.single('ppt'), async (req, res) => {
   const { id } = req.params;
   try {
@@ -932,7 +931,7 @@ app.put('/api/forms/:id/ppt', authenticateToken, upload.single('ppt'), async (re
 
     const form = formCheck.rows[0];
     if (form.is_completed) {
-      return res.status(403).json({ error: 'Cannot upload PPT to a completed form' });
+      return res.status(403).json({ error: 'Cannot upload file to a completed form' });
     }
 
     const orgs = [form.organizer_1, form.organizer_2, form.organizer_3].filter(Boolean).map(String);
@@ -1022,7 +1021,7 @@ app.put('/api/forms/:id/status', authenticateToken, async (req, res) => {
 
     if (status === 'Approved' && participantCount > 0 && !hasPpt) {
       return res.status(400).json({
-        error: 'PPT is required to approve this event form because participants are added.'
+        error: 'An event file attachment (PPT, PDF, ZIP, Image, etc.) is required to approve this event form because participants are added.'
       });
     }
 

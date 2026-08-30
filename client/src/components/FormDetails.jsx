@@ -1,7 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
 import { useAuth } from '../AuthContext';
-import { CheckCircle, XCircle, Edit3, Users, Printer, Trash2 } from 'lucide-react';
+import { CheckCircle, XCircle, Edit3, Users, Printer, Trash2, Search } from 'lucide-react';
+
+const formatDateDDMMYYYY = (dateStr) => {
+  if (!dateStr) return 'N/A';
+  const str = String(dateStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [y, m, d] = str.split('-');
+    return `${d}-${m}-${y}`;
+  }
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+};
 
 const parseTimeToMinutes = (timeStr) => {
   if (!timeStr) return 0;
@@ -78,6 +93,9 @@ const FormDetails = () => {
 
   const [activeTab, setActiveTab] = useState('active');
   const [filterDate, setFilterDate] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterAssociation, setFilterAssociation] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
 
   // Pagination State
   const [activePage, setActivePage] = useState(1);
@@ -88,7 +106,7 @@ const FormDetails = () => {
   useEffect(() => {
     setActivePage(1);
     setCompletedPage(1);
-  }, [activeTab, filterDate]);
+  }, [activeTab, filterDate, searchTerm, filterAssociation, filterStatus]);
 
   const renderPagination = (currentPage, setCurrentPage, totalCount) => {
     const limit = parseInt(pageSize, 10) || 10;
@@ -320,15 +338,20 @@ const FormDetails = () => {
   const canEditDateTime = (form) => {
     if (!form || form.is_completed) return false;
     if (user.role === 'Staff' || user.role === 'Admin') return true;
+    if (user.role !== 'Student') return false;
+
     const sub = (user.sub_role || '').toLowerCase();
     const isExecOrSec = sub.includes('exec') || sub.includes('secret') || sub.includes('secert');
+    if (!isExecOrSec) return false;
+
     const isOrg = [form.organizer_1, form.organizer_2, form.organizer_3].includes(user.id);
     const isCreatorSec = (sub.includes('secret') || sub.includes('secert')) && form.created_by === user.id;
+    const isAligned = isAssociationAligned(form.created_by_sub_role, user.sub_role);
 
-    if (isOrg || isCreatorSec) return true;
-    if (isExecOrSec && isAssociationAligned(form.created_by_sub_role, user.sub_role)) return true;
+    if (isOrg || isCreatorSec || isAligned) return true;
     return false;
   };
+
 
 
   const handleCompleteChange = async (formId, isCompleted) => {
@@ -634,12 +657,6 @@ const FormDetails = () => {
   const handlePptUpload = async (formId, file) => {
     if (!file) return;
 
-    const ext = file.name.split('.').pop().toLowerCase();
-    if (ext !== 'ppt' && ext !== 'pptx') {
-      alert('Only .ppt and .pptx files are allowed!');
-      return;
-    }
-
     const formData = new FormData();
     formData.append('ppt', file);
 
@@ -651,9 +668,9 @@ const FormDetails = () => {
         }
       });
       fetchForms();
-      alert('PPT uploaded successfully');
+      alert('File uploaded successfully');
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to upload PPT');
+      alert(err.response?.data?.error || 'Failed to upload file');
     } finally {
       setUploadingFormId(null);
     }
@@ -790,15 +807,40 @@ const FormDetails = () => {
         return false;
       }
 
-      // 2. Date check
+      // 2. Date check (Filter by Event Date)
       if (filterDate) {
-        const formDate = new Date(form.created_at);
-        const selectedDate = new Date(filterDate);
-        const isSameDay =
-          formDate.getFullYear() === selectedDate.getFullYear() &&
-          formDate.getMonth() === selectedDate.getMonth() &&
-          formDate.getDate() === selectedDate.getDate();
-        if (!isSameDay) return false;
+        const formEvtDate = form.event_date ? normalizeDateStr(form.event_date) : normalizeDateStr(form.created_at);
+        const selectedDate = normalizeDateStr(filterDate);
+        if (formEvtDate !== selectedDate) return false;
+      }
+
+      // 3. Association Dropdown Filter
+      if (filterAssociation) {
+        const assocLabel = getAssociationLabel(form.created_by_sub_role);
+        if (assocLabel !== filterAssociation) return false;
+      }
+
+      // 4. Status Dropdown Filter
+      if (filterStatus) {
+        if (form.status !== filterStatus) return false;
+      }
+
+      // 5. Search Term check (Event Name & Participant Roll #)
+      if (searchTerm && searchTerm.trim() !== '') {
+        const query = searchTerm.trim().toLowerCase();
+
+        // Match Event Name
+        const nameMatch = (form.event_name || '').toLowerCase().includes(query);
+
+        // Match Participants' Roll Number & Name
+        const participantMatch = (form.participants || []).some(p => 
+          (p.roll_number || '').toLowerCase().includes(query) ||
+          (p.username || '').toLowerCase().includes(query)
+        );
+
+        if (!nameMatch && !participantMatch) {
+          return false;
+        }
       }
 
       return true;
@@ -848,10 +890,59 @@ const FormDetails = () => {
           )}
         </div>
 
-        {/* Date Filter Input */}
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+        {/* Search & Filter Dropdowns Bar */}
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Text Search Box (Event Name, Participant Roll #) */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={16} style={{ position: 'absolute', left: '0.6rem', color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              className="input"
+              placeholder="Search Event Name or Participant Roll #..."
+              style={{ padding: '0.35rem 0.6rem 0.35rem 2.2rem', fontSize: '0.85rem', background: 'var(--input-bg)', minWidth: '260px' }}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                style={{ position: 'absolute', right: '0.5rem', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Association Dropdown Filter */}
+          <select
+            className="select"
+            style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem', background: 'var(--input-bg)', cursor: 'pointer' }}
+            value={filterAssociation}
+            onChange={(e) => setFilterAssociation(e.target.value)}
+          >
+            <option value="">All Associations</option>
+            <option value="General">General</option>
+            <option value="NISM">NISM</option>
+            <option value="NIPM">NIPM</option>
+            <option value="Ad Club">AD Club</option>
+          </select>
+
+          {/* Status Dropdown Filter */}
+          <select
+            className="select"
+            style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem', background: 'var(--input-bg)', cursor: 'pointer' }}
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
+            <option value="">All Statuses</option>
+            <option value="Pending">Pending</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+
+          {/* Date Filter Input */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Filter by Date:</span>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Date:</span>
             <input
               type="date"
               className="input"
@@ -860,13 +951,14 @@ const FormDetails = () => {
               onChange={(e) => setFilterDate(e.target.value)}
             />
           </div>
-          {filterDate && (
+
+          {(filterDate || searchTerm || filterAssociation || filterStatus) && (
             <button
               className="btn btn-secondary"
               style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderColor: 'var(--danger)', color: '#F87171' }}
-              onClick={() => setFilterDate('')}
+              onClick={() => { setFilterDate(''); setSearchTerm(''); setFilterAssociation(''); setFilterStatus(''); }}
             >
-              Clear
+              Clear All
             </button>
           )}
         </div>
@@ -1044,7 +1136,7 @@ const FormDetails = () => {
                       )}
                       <td style={{ padding: '1rem' }}>
                         <div style={{ fontWeight: 500 }}>
-                          {form.event_date ? new Date(form.event_date).toLocaleDateString() : 'N/A'}
+                          {formatDateDDMMYYYY(form.event_date)}
                         </div>
                         {form.event_time && (
                           <div style={{ fontSize: '0.8rem', color: 'var(--primary-hover)', marginTop: '0.25rem', fontWeight: 500 }}>
@@ -1186,10 +1278,10 @@ const FormDetails = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '2rem', fontSize: '14pt', color: 'black' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <div><strong>Event Name:</strong> {form.event_name}</div>
-                    <div><strong>Created Date:</strong> {form.created_date ? new Date(form.created_date).toLocaleDateString() : new Date(form.created_at).toLocaleDateString()}</div>
+                    <div><strong>Created Date:</strong> {formatDateDDMMYYYY(form.created_date || form.created_at)}</div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <div><strong>Event Date:</strong> {form.event_date ? new Date(form.event_date).toLocaleDateString() : 'N/A'}</div>
+                    <div><strong>Event Date:</strong> {formatDateDDMMYYYY(form.event_date)}</div>
                     <div><strong>Event Time:</strong> {form.event_time || 'N/A'}</div>
                   </div>
                 </div>
@@ -1245,9 +1337,9 @@ const FormDetails = () => {
                     </thead>
                     <tbody>
                       <tr>
-                        <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top' }}>{form.round_1_details || 'N/A'}</td>
-                        <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top' }}>{form.round_2_details || 'N/A'}</td>
-                        <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top' }}>{form.round_3_details || 'N/A'}</td>
+                        <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top', whiteSpace: 'pre-wrap' }}>{form.round_1_details || 'N/A'}</td>
+                        <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top', whiteSpace: 'pre-wrap' }}>{form.round_2_details || 'N/A'}</td>
+                        <td style={{ border: '1px solid black', padding: '0.5rem', verticalAlign: 'top', whiteSpace: 'pre-wrap' }}>{form.round_3_details || 'N/A'}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1255,7 +1347,7 @@ const FormDetails = () => {
 
                 {form.ppt_original_name && (
                   <div style={{ fontSize: '14pt', color: 'black', marginBottom: '2rem' }}>
-                    <strong>Presentation (PPT):</strong> {form.ppt_original_name}
+                    <strong>Attachment File:</strong> {form.ppt_original_name}
                   </div>
                 )}
               </div>
@@ -1396,8 +1488,8 @@ const FormDetails = () => {
             ) : (
               <div style={{ fontSize: '0.9rem', marginBottom: '1.25rem', color: 'var(--text-muted)' }}>
                 <p style={{ margin: '0.25rem 0' }}><strong>Created By:</strong> {currentViewingForm.created_by_name}</p>
-                <p style={{ margin: '0.25rem 0' }}><strong>Created Date:</strong> {currentViewingForm.created_date ? new Date(currentViewingForm.created_date).toLocaleDateString() : new Date(currentViewingForm.created_at).toLocaleDateString()}</p>
-                <p style={{ margin: '0.25rem 0' }}><strong>Event Date:</strong> {currentViewingForm.event_date ? new Date(currentViewingForm.event_date).toLocaleDateString() : 'N/A'}</p>
+                <p style={{ margin: '0.25rem 0' }}><strong>Created Date:</strong> {formatDateDDMMYYYY(currentViewingForm.created_date || currentViewingForm.created_at)}</p>
+                <p style={{ margin: '0.25rem 0' }}><strong>Event Date:</strong> {formatDateDDMMYYYY(currentViewingForm.event_date)}</p>
                 <p style={{ margin: '0.25rem 0' }}><strong>Event Time:</strong> {currentViewingForm.event_time || 'N/A'}</p>
                 <p style={{ margin: '0.25rem 0' }}><strong>Status:</strong> <span className={`badge badge-${currentViewingForm.status}`}>{currentViewingForm.status}</span></p>
                 {canEditDateTime(currentViewingForm) && (
@@ -1673,18 +1765,18 @@ const FormDetails = () => {
                 <div style={{ marginBottom: '1.25rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                     <h4 style={{ margin: 0, fontSize: '1.05rem' }}>Rounds Details</h4>
-                    {isOrganizer(currentViewingForm) && editingRounds !== currentViewingForm.id && currentViewingForm.status !== 'Approved' && (
+                    {isOrganizer(currentViewingForm) && editingRounds !== currentViewingForm.id && !currentViewingForm.is_completed && (
                       <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => startEditingRounds(currentViewingForm)}>
-                        <Edit3 size={14} /> Edit
+                        <Edit3 size={14} /> {(!currentViewingForm.round_1_details && !currentViewingForm.round_2_details && !currentViewingForm.round_3_details) ? 'Add Rounds' : 'Edit Rounds'}
                       </button>
                     )}
                   </div>
 
                   {editingRounds === currentViewingForm.id ? (
                     <div style={{ marginTop: '0.5rem' }}>
-                      <textarea className="textarea" placeholder="Round 1 Details" value={roundsData.round_1} onChange={e => setRoundsData({ ...roundsData, round_1: e.target.value })} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '60px' }} />
-                      <textarea className="textarea" placeholder="Round 2 Details" value={roundsData.round_2} onChange={e => setRoundsData({ ...roundsData, round_2: e.target.value })} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '60px' }} />
-                      <textarea className="textarea" placeholder="Round 3 Details" value={roundsData.round_3} onChange={e => setRoundsData({ ...roundsData, round_3: e.target.value })} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '60px' }} />
+                      <textarea className="textarea" placeholder="Round 1 Details (Press Enter for line 1, line 2, etc.)" rows={3} value={roundsData.round_1} onChange={e => setRoundsData({ ...roundsData, round_1: e.target.value })} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '75px', padding: '0.5rem' }} />
+                      <textarea className="textarea" placeholder="Round 2 Details (Press Enter for line 1, line 2, etc.)" rows={3} value={roundsData.round_2} onChange={e => setRoundsData({ ...roundsData, round_2: e.target.value })} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '75px', padding: '0.5rem' }} />
+                      <textarea className="textarea" placeholder="Round 3 Details (Press Enter for line 1, line 2, etc.)" rows={3} value={roundsData.round_3} onChange={e => setRoundsData({ ...roundsData, round_3: e.target.value })} style={{ width: '100%', marginBottom: '0.5rem', minHeight: '75px', padding: '0.5rem' }} />
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button className="btn btn-primary" onClick={() => saveRounds(currentViewingForm.id)}>Save</button>
                         <button className="btn btn-secondary" onClick={() => setEditingRounds(null)}>Cancel</button>
@@ -1692,17 +1784,26 @@ const FormDetails = () => {
                     </div>
                   ) : (
                     <div style={{ fontSize: '0.9rem', background: 'rgba(0,0,0,0.15)', padding: '0.75rem', borderRadius: '8px' }}>
-                      <p style={{ marginBottom: '0.25rem' }}><strong>Round 1:</strong> {currentViewingForm.round_1_details || 'N/A'}</p>
-                      <p style={{ marginBottom: '0.25rem' }}><strong>Round 2:</strong> {currentViewingForm.round_2_details || 'N/A'}</p>
-                      <p><strong>Round 3:</strong> {currentViewingForm.round_3_details || 'N/A'}</p>
+                      <div style={{ marginBottom: '0.5rem' }}>
+                        <strong>Round 1:</strong>
+                        <div style={{ whiteSpace: 'pre-wrap', marginTop: '0.25rem' }}>{currentViewingForm.round_1_details || 'N/A'}</div>
+                      </div>
+                      <div style={{ marginBottom: '0.5rem' }}>
+                        <strong>Round 2:</strong>
+                        <div style={{ whiteSpace: 'pre-wrap', marginTop: '0.25rem' }}>{currentViewingForm.round_2_details || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <strong>Round 3:</strong>
+                        <div style={{ whiteSpace: 'pre-wrap', marginTop: '0.25rem' }}>{currentViewingForm.round_3_details || 'N/A'}</div>
+                      </div>
                     </div>
                   )}
                 </div>
 
-                {/* Presentation (PPT) Section */}
+                {/* File Attachment Section */}
                 {shouldShowPpt(currentViewingForm) && (
                   <div style={{ marginBottom: '1.25rem' }}>
-                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>Presentation (PPT)</h4>
+                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>Event Attachment (PPT, PDF, ZIP, Image, etc.)</h4>
                     {currentViewingForm.ppt_filename ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.5rem 0', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
                         <span style={{ fontSize: '0.85rem', flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
@@ -1712,7 +1813,7 @@ const FormDetails = () => {
                           href={getPptUrl(currentViewingForm.ppt_filename)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          download={currentViewingForm.ppt_original_name || 'presentation.pptx'}
+                          download={currentViewingForm.ppt_original_name || 'attachment'}
                           className="btn btn-secondary"
                           style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none', display: 'inline-block' }}
                         >
@@ -1720,14 +1821,13 @@ const FormDetails = () => {
                         </a>
                       </div>
                     ) : (
-                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0.5rem 0' }}>No PPT uploaded yet.</p>
+                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0.5rem 0' }}>No file uploaded yet.</p>
                     )}
 
                     {canEditPpt(currentViewingForm) && (
                       <div style={{ marginTop: '0.5rem' }}>
                         <input
                           type="file"
-                          accept=".ppt,.pptx"
                           style={{ display: 'none' }}
                           id={`modal-ppt-file-input-${currentViewingForm.id}`}
                           onChange={(e) => handlePptUpload(currentViewingForm.id, e.target.files[0])}
@@ -1741,8 +1841,8 @@ const FormDetails = () => {
                           {uploadingFormId === currentViewingForm.id
                             ? 'Uploading...'
                             : currentViewingForm.ppt_filename
-                              ? 'Change PPT'
-                              : 'Upload PPT'}
+                              ? 'Change File'
+                              : 'Upload File'}
                         </label>
                       </div>
                     )}
@@ -1868,15 +1968,24 @@ const FormDetails = () => {
                 <div style={{ fontSize: '0.9rem', marginBottom: '1.25rem' }}>
                   <h4 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Rounds Details</h4>
                   <div style={{ background: 'rgba(0,0,0,0.15)', padding: '0.75rem', borderRadius: '8px' }}>
-                    <p style={{ marginBottom: '0.25rem' }}><strong>Round 1:</strong> {currentViewingForm.round_1_details || 'N/A'}</p>
-                    <p style={{ marginBottom: '0.25rem' }}><strong>Round 2:</strong> {currentViewingForm.round_2_details || 'N/A'}</p>
-                    <p><strong>Round 3:</strong> {currentViewingForm.round_3_details || 'N/A'}</p>
+                    <div style={{ marginBottom: '0.5rem' }}>
+                      <strong>Round 1:</strong>
+                      <div style={{ whiteSpace: 'pre-wrap', marginTop: '0.25rem' }}>{currentViewingForm.round_1_details || 'N/A'}</div>
+                    </div>
+                    <div style={{ marginBottom: '0.5rem' }}>
+                      <strong>Round 2:</strong>
+                      <div style={{ whiteSpace: 'pre-wrap', marginTop: '0.25rem' }}>{currentViewingForm.round_2_details || 'N/A'}</div>
+                    </div>
+                    <div>
+                      <strong>Round 3:</strong>
+                      <div style={{ whiteSpace: 'pre-wrap', marginTop: '0.25rem' }}>{currentViewingForm.round_3_details || 'N/A'}</div>
+                    </div>
                   </div>
                 </div>
 
                 {shouldShowPpt(currentViewingForm) && currentViewingForm.ppt_filename && (
                   <div style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-                    <h4 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Presentation (PPT)</h4>
+                    <h4 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Event Attachment (PPT, PDF, ZIP, Image, etc.)</h4>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
                       <span style={{ flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                         📄 {currentViewingForm.ppt_original_name || currentViewingForm.ppt_filename}
@@ -1885,7 +1994,7 @@ const FormDetails = () => {
                         href={getPptUrl(currentViewingForm.ppt_filename)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        download={currentViewingForm.ppt_original_name || 'presentation.pptx'}
+                        download={currentViewingForm.ppt_original_name || 'attachment'}
                         className="btn btn-secondary"
                         style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none' }}
                       >
@@ -2075,7 +2184,7 @@ const FormDetails = () => {
                       }}>
                         <span>Event Activities</span>
                         <span style={{ fontSize: '9.5pt', fontWeight: 'bold', color: 'black' }}>
-                          Date: {selectedFormsList[0]?.event_date ? new Date(selectedFormsList[0].event_date).toLocaleDateString() : new Date().toLocaleDateString()}
+                          Date: {formatDateDDMMYYYY(selectedFormsList[0]?.event_date)}
                         </span>
                       </div>
 
@@ -2311,7 +2420,7 @@ const FormDetails = () => {
                   <tr style={{ borderBottom: '1px solid black' }}>
                     <td style={{ padding: '0.5rem', fontWeight: 'bold', background: '#f1f5f9', borderRight: '1px solid black' }}>Event Date & Time</td>
                     <td style={{ padding: '0.5rem' }}>
-                      {singlePrintForm.event_date ? new Date(singlePrintForm.event_date).toLocaleDateString() : 'N/A'} {singlePrintForm.event_time ? ` (${singlePrintForm.event_time})` : ''}
+                      {formatDateDDMMYYYY(singlePrintForm.event_date)} {singlePrintForm.event_time ? ` (${singlePrintForm.event_time})` : ''}
                     </td>
                   </tr>
                   <tr>
@@ -2356,9 +2465,9 @@ const FormDetails = () => {
                   </thead>
                   <tbody>
                     <tr>
-                      <td style={{ padding: '0.5rem', border: '1px solid black', verticalAlign: 'top' }}>{singlePrintForm.round_1_details || 'N/A'}</td>
-                      <td style={{ padding: '0.5rem', border: '1px solid black', verticalAlign: 'top' }}>{singlePrintForm.round_2_details || 'N/A'}</td>
-                      <td style={{ padding: '0.5rem', border: '1px solid black', verticalAlign: 'top' }}>{singlePrintForm.round_3_details || 'N/A'}</td>
+                      <td style={{ padding: '0.5rem', border: '1px solid black', verticalAlign: 'top', whiteSpace: 'pre-wrap' }}>{singlePrintForm.round_1_details || 'N/A'}</td>
+                      <td style={{ padding: '0.5rem', border: '1px solid black', verticalAlign: 'top', whiteSpace: 'pre-wrap' }}>{singlePrintForm.round_2_details || 'N/A'}</td>
+                      <td style={{ padding: '0.5rem', border: '1px solid black', verticalAlign: 'top', whiteSpace: 'pre-wrap' }}>{singlePrintForm.round_3_details || 'N/A'}</td>
                     </tr>
                   </tbody>
                 </table>
