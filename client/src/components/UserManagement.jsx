@@ -135,7 +135,7 @@ const UserManagement = () => {
     }
 
     return true;
-  });
+  }).sort((a, b) => (a.username || '').localeCompare(b.username || ''));
 
   useEffect(() => {
     fetchUsers();
@@ -221,6 +221,17 @@ const UserManagement = () => {
     if (!window.confirm('Are you sure you want to delete all 2nd Year students? This action is irreversible.')) return;
     try {
       const res = await api.delete('/users/remove-second-year');
+      alert(res.data.message || 'Students removed successfully');
+      fetchUsers();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to remove students');
+    }
+  };
+
+  const handleRemoveAllFirstYear = async () => {
+    if (!window.confirm('Are you sure you want to delete all 1st Year students? This action is irreversible.')) return;
+    try {
+      const res = await api.delete('/users/remove-first-year');
       alert(res.data.message || 'Students removed successfully');
       fetchUsers();
     } catch (err) {
@@ -745,21 +756,33 @@ Sl. Roll No Name of the Student
             </div>
 
             {/* Special Action Buttons */}
-            {filterType === '1st Year' && (
-              <button
-                onClick={handlePromoteAll}
-                className="btn btn-secondary"
-                style={{ 
-                  padding: '0.4rem 1rem', 
-                  fontSize: '0.875rem',
-                  borderColor: 'var(--primary)',
-                  color: 'var(--text)'
-                }}
-              >
-                Promote All to 2nd Year
-              </button>
+            {filterType === '1st Year' && (user.role === 'Staff' || user.role === 'Admin') && (
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  onClick={handlePromoteAll}
+                  className="btn btn-secondary"
+                  style={{ 
+                    padding: '0.4rem 1rem', 
+                    fontSize: '0.875rem',
+                    borderColor: 'var(--primary)',
+                    color: 'var(--text)'
+                  }}
+                >
+                  Promote All to 2nd Year
+                </button>
+                <button
+                  onClick={handleRemoveAllFirstYear}
+                  className="btn btn-danger"
+                  style={{ 
+                    padding: '0.4rem 1rem', 
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  Remove All 1st Year Students
+                </button>
+              </div>
             )}
-            {filterType === '2nd Year' && (
+            {filterType === '2nd Year' && (user.role === 'Staff' || user.role === 'Admin') && (
               <button
                 onClick={handleRemoveAll}
                 className="btn btn-danger"
@@ -768,7 +791,7 @@ Sl. Roll No Name of the Student
                   fontSize: '0.875rem'
                 }}
               >
-                Remove All Students
+                Remove All 2nd Year Students
               </button>
             )}
           </div>

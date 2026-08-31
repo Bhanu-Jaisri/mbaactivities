@@ -319,7 +319,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/users', authenticateToken, async (req, res) => {
   // Only Admin or Staff can view all users, or maybe we need Students to be viewed by Staff/Secretary/Executive
   try {
-    const result = await db.query('SELECT id, username, role, sub_role, roll_number, section, year FROM users');
+    const result = await db.query('SELECT id, username, role, sub_role, roll_number, section, year FROM users ORDER BY LOWER(username) ASC');
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -448,6 +448,20 @@ app.delete('/api/users/remove-second-year', authenticateToken, async (req, res) 
   try {
     const result = await db.query(
       "DELETE FROM users WHERE role = 'Student' AND year = '2nd Year' RETURNING id"
+    );
+    res.json({ message: `${result.rowCount} student(s) removed` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/remove-first-year', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'Staff' && req.user.role !== 'Admin') {
+    return res.status(403).json({ error: 'Only Staff/Admin can delete students' });
+  }
+  try {
+    const result = await db.query(
+      "DELETE FROM users WHERE role = 'Student' AND year = '1st Year' RETURNING id"
     );
     res.json({ message: `${result.rowCount} student(s) removed` });
   } catch (err) {

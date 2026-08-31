@@ -1628,6 +1628,7 @@ const FormDetails = () => {
                                 }
                                 return true;
                               })
+                              .sort((a, b) => (a.username || '').localeCompare(b.username || ''))
                               .map(u => {
                                 const isAlreadyAdded = selectedParticipants.includes(u.id.toString());
                                 const conflict = getConflictInfoForStudent(u.id, currentViewingForm?.event_date, currentViewingForm?.id);

@@ -108,7 +108,7 @@ const FormCreation = () => {
       if (selectedYear && u.year !== selectedYear) return false;
       if (selectedSection && u.section !== selectedSection) return false;
       return true;
-    });
+    }).sort((a, b) => (a.username || '').localeCompare(b.username || ''));
   };
 
   const filteredStudents1 = getFilteredStudents(org1Year, org1Section);
