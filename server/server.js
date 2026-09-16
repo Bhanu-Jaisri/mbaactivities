@@ -984,6 +984,37 @@ app.put('/api/forms/:id/ppt', authenticateToken, upload.single('ppt'), async (re
   }
 });
 
+// Upload/Update Drive Link (Organizers only)
+app.put('/api/forms/:id/drive_link', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { drive_link } = req.body;
+
+  if (req.user.role !== 'Student') {
+    return res.status(403).json({ error: 'Only student organizers can update the drive link.' });
+  }
+
+  try {
+    const formRes = await db.query('SELECT * FROM event_forms WHERE id = $1', [id]);
+    if (formRes.rowCount === 0) return res.status(404).json({ error: 'Form not found' });
+    const form = formRes.rows[0];
+
+    const orgs = [form.organizer_1, form.organizer_2, form.organizer_3].filter(Boolean).map(String);
+    const isOrganizer = orgs.includes(String(req.user.id));
+    if (!isOrganizer) {
+      return res.status(403).json({ error: 'Only assigned organizers of this event can update the drive link.' });
+    }
+
+    const result = await db.query(
+      'UPDATE event_forms SET drive_link = $1 WHERE id = $2 RETURNING *',
+      [drive_link, id]
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Approve/Reject (Secretary/Executive Student only)
 app.put('/api/forms/:id/status', authenticateToken, async (req, res) => {
   const { id } = req.params;

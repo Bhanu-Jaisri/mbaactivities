@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS event_forms (
     round_3_details TEXT,
     ppt_filename VARCHAR(255),
     ppt_original_name VARCHAR(255),
+    drive_link VARCHAR(1000),
     rejection_queries TEXT,
     is_completed BOOLEAN DEFAULT FALSE,
     completed_at TIMESTAMP,

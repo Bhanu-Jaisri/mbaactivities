@@ -676,6 +676,29 @@ const FormDetails = () => {
     }
   };
 
+  const [updatingDriveLinkId, setUpdatingDriveLinkId] = useState(null);
+  const [driveLinkInputs, setDriveLinkInputs] = useState({});
+
+  const handleDriveLinkChange = (formId, value) => {
+    setDriveLinkInputs(prev => ({ ...prev, [formId]: value }));
+  };
+
+  const handleDriveLinkSave = async (formId) => {
+    const link = driveLinkInputs[formId];
+    if (link === undefined) return;
+
+    setUpdatingDriveLinkId(formId);
+    try {
+      await api.put(`/forms/${formId}/drive_link`, { drive_link: link });
+      fetchForms();
+      alert('Drive link saved successfully');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to save drive link');
+    } finally {
+      setUpdatingDriveLinkId(null);
+    }
+  };
+
   const startEditingParticipants = (form) => {
     if (users.length === 0) {
       fetchUsers();
@@ -1350,6 +1373,11 @@ const FormDetails = () => {
                     <strong>Attachment File:</strong> {form.ppt_original_name}
                   </div>
                 )}
+                {form.drive_link && (
+                  <div style={{ fontSize: '14pt', color: 'black', marginBottom: '2rem' }}>
+                    <strong>Drive Link:</strong> <a href={form.drive_link.startsWith('http') ? form.drive_link : `https://${form.drive_link}`} target="_blank" rel="noopener noreferrer">Open Link</a>
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -1847,6 +1875,49 @@ const FormDetails = () => {
                         </label>
                       </div>
                     )}
+
+                    {/* Drive Link Section */}
+                    <div style={{ marginTop: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>Drive Link (Optional)</h4>
+                      {currentViewingForm.drive_link ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.5rem 0', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
+                          <span style={{ fontSize: '0.85rem', flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                            🔗 {currentViewingForm.drive_link}
+                          </span>
+                          <a
+                            href={currentViewingForm.drive_link.startsWith('http') ? currentViewingForm.drive_link : `https://${currentViewingForm.drive_link}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-secondary"
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none', display: 'inline-block' }}
+                          >
+                            Open Link
+                          </a>
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0.5rem 0' }}>No drive link provided.</p>
+                      )}
+
+                      {canEditPpt(currentViewingForm) && (
+                        <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
+                          <input
+                            type="text"
+                            placeholder="Paste Google Drive link here"
+                            value={driveLinkInputs[currentViewingForm.id] !== undefined ? driveLinkInputs[currentViewingForm.id] : (currentViewingForm.drive_link || '')}
+                            onChange={(e) => handleDriveLinkChange(currentViewingForm.id, e.target.value)}
+                            style={{ flex: 1, padding: '0.4rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--card-bg)', color: 'var(--text-primary)' }}
+                          />
+                          <button
+                            onClick={() => handleDriveLinkSave(currentViewingForm.id)}
+                            disabled={updatingDriveLinkId === currentViewingForm.id}
+                            className="btn btn-primary"
+                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                          >
+                            {updatingDriveLinkId === currentViewingForm.id ? 'Saving...' : 'Save Link'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -2000,6 +2071,26 @@ const FormDetails = () => {
                         style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none' }}
                       >
                         Download
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {shouldShowPpt(currentViewingForm) && currentViewingForm.drive_link && (
+                  <div style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                    <h4 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Drive Link</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
+                      <span style={{ flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        🔗 {currentViewingForm.drive_link}
+                      </span>
+                      <a
+                        href={currentViewingForm.drive_link.startsWith('http') ? currentViewingForm.drive_link : `https://${currentViewingForm.drive_link}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-secondary"
+                        style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', textDecoration: 'none' }}
+                      >
+                        Open Link
                       </a>
                     </div>
                   </div>

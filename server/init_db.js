@@ -99,6 +99,7 @@ async function initDb() {
         round_3_details TEXT,
         ppt_filename VARCHAR(255),
         ppt_original_name VARCHAR(255),
+        drive_link VARCHAR(1000),
         rejection_queries TEXT,
         is_completed BOOLEAN DEFAULT FALSE,
         completed_at TIMESTAMP,
@@ -114,6 +115,7 @@ async function initDb() {
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS ppt_filename VARCHAR(255);
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS ppt_original_name VARCHAR(255);
+      ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS drive_link VARCHAR(1000);
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS rejection_queries TEXT;
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS is_completed BOOLEAN DEFAULT FALSE;
       ALTER TABLE event_forms ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
