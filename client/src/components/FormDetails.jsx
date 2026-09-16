@@ -258,6 +258,8 @@ const FormDetails = () => {
   };
 
   const canCompleteForm = (form) => {
+    if (!form) return false;
+    if (user.role === 'Staff' || user.role === 'Admin') return true;
     if (form.status !== 'Approved') return false;
     const userSubRole = (user.sub_role || '').toLowerCase();
     const isSecOrExec = userSubRole.includes('secret') || userSubRole.includes('secert') || userSubRole.includes('exec');
@@ -359,6 +361,8 @@ const FormDetails = () => {
     if (!window.confirm(`Are you sure you want to ${actionText}?`)) return;
     try {
       await api.put(`/forms/${formId}/complete`, { is_completed: isCompleted });
+      setViewingForm(null);
+      setActiveTab('active');
       fetchForms();
       alert(`Event successfully ${isCompleted ? 'marked as completed' : 'reopened'}!`);
     } catch (err) {
@@ -993,35 +997,38 @@ const FormDetails = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--surface-border)' }}>
-                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Event Name</th>
-                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Created By</th>
-                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Association</th>
-                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Approved By</th>
-                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Date</th>
-                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Approved Status</th>
-                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600' }}>Completed Status</th>
+                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'left' }}>Event Date</th>
+                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'left' }}>Event Name</th>
+                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'left' }}>Association</th>
+                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'left' }}>Organizers</th>
                   <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedCompletedForms.map(form => (
                   <tr key={form.id} style={{ borderBottom: '1px solid var(--surface-border)' }}>
+                    <td style={{ padding: '1rem' }}>
+                      <div style={{ fontWeight: 500 }}>
+                        {formatDateDDMMYYYY(form.event_date)}
+                      </div>
+                      {form.event_time && (
+                        <div style={{ fontSize: '0.8rem', color: 'var(--primary-hover)', marginTop: '0.25rem', fontWeight: 500 }}>
+                          ⏰ {form.event_time}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: '1rem', fontWeight: 500 }}>{form.event_name}</td>
-                    <td style={{ padding: '1rem' }}>{form.created_by_name}</td>
                     <td style={{ padding: '1rem' }}>
                       <span className="association-badge" style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '500', background: 'rgba(99, 102, 241, 0.15)', color: '#818CF8' }}>
                         {getAssociationLabel(form.created_by_sub_role)}
                       </span>
                     </td>
-                    <td style={{ padding: '1rem' }}>{form.approved_by_name || 'N/A'}</td>
-                    <td style={{ padding: '1rem' }}>{form.created_date ? new Date(form.created_date).toLocaleDateString() : new Date(form.created_at).toLocaleDateString()}</td>
                     <td style={{ padding: '1rem' }}>
-                      <span className={`badge badge-${form.status}`}>{form.status}</span>
-                    </td>
-                    <td style={{ padding: '1rem' }}>
-                      <span className="badge badge-Approved" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34D399' }}>
-                        Completed
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.85rem' }}>
+                        <div><strong>{form.org1_name}</strong></div>
+                        {form.org2_name && <div><strong>{form.org2_name}</strong></div>}
+                        {form.org3_name && <div><strong>{form.org3_name}</strong></div>}
+                      </div>
                     </td>
                     <td style={{ padding: '1rem', textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -1042,7 +1049,7 @@ const FormDetails = () => {
                 ))}
                 {filteredForms.length === 0 && (
                   <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                    <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                       No completed events found.
                     </td>
                   </tr>
@@ -1580,11 +1587,11 @@ const FormDetails = () => {
                       boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
                     }}>
                       <h5 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                        Filter & Add Student Participant
+                        Add Student Participant
                       </h5>
 
                       {/* Filter controls */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
                         <div>
                           <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Year</label>
                           <select
@@ -1618,17 +1625,6 @@ const FormDetails = () => {
                             <option value="C">Sec C</option>
                             <option value="D">Sec D</option>
                           </select>
-                        </div>
-                        <div>
-                          <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Search Student</label>
-                          <input
-                            type="text"
-                            className="input"
-                            placeholder="Name, Roll #, or Sub-Role..."
-                            value={partSearch}
-                            onChange={e => setPartSearch(e.target.value)}
-                            style={{ width: '100%', padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
-                          />
                         </div>
                       </div>
 

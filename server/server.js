@@ -1100,12 +1100,13 @@ app.put('/api/forms/:id/complete', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Only approved event forms can be marked as completed' });
     }
 
-    // Check authorization: must be Student and sub_role is Secretary or Executive
+    // Check authorization: Staff, Admin, or authorized Student Secretary/Executive
+    const isStaffOrAdmin = req.user.role === 'Staff' || req.user.role === 'Admin';
     const userSubRoleLower = (req.user.sub_role || '').toLowerCase();
     const isSecOrExec = req.user.role === 'Student' && (userSubRoleLower.includes('secret') || userSubRoleLower.includes('secert') || userSubRoleLower.includes('exec')) && isAssociationAligned(form.creator_sub_role, req.user.sub_role);
 
-    if (!isSecOrExec) {
-      return res.status(403).json({ error: 'Only student Secretary or Executive can change the completion status of this event' });
+    if (!isStaffOrAdmin && !isSecOrExec) {
+      return res.status(403).json({ error: 'Only Staff, Admin, or authorized Student Secretary/Executive can change the completion status of this event' });
     }
 
     const result = await db.query(
