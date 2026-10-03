@@ -516,8 +516,8 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
     if (targetUser.role === 'Staff' && req.user.role !== 'Admin') {
       return res.status(403).json({ error: 'Only Admin can edit Staff accounts' });
     }
-    if (targetUser.role === 'Admin') {
-      return res.status(403).json({ error: 'Cannot edit Admin accounts' });
+    if (targetUser.role === 'Admin' && req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Only Admin can edit Admin accounts' });
     }
 
     // Check if the username is already taken by another user
@@ -603,8 +603,8 @@ app.put('/api/users/:id/reset-password', authenticateToken, async (req, res) => 
     if (targetUser.role === 'Staff' && req.user.role !== 'Admin') {
       return res.status(403).json({ error: 'Only Admin can reset Staff passwords' });
     }
-    if (targetUser.role === 'Admin' && req.user.id !== parseInt(id)) {
-      return res.status(403).json({ error: 'Cannot reset Admin password' });
+    if (targetUser.role === 'Admin' && req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Only Admin can reset Admin passwords' });
     }
 
     await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newPassword, id]);

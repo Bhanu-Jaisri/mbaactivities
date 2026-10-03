@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
 import { useAuth } from '../AuthContext';
-import { CheckCircle, XCircle, Edit3, Users, Printer, Trash2, Search } from 'lucide-react';
+import { CheckCircle, XCircle, Edit3, Users, Printer, Trash2, Search, FileSpreadsheet, FileText, Download } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
 const formatDateDDMMYYYY = (dateStr) => {
   if (!dateStr) return 'N/A';
@@ -91,6 +94,10 @@ const FormDetails = () => {
 
   const [singlePrintForm, setSinglePrintForm] = useState(null);
 
+  // Completed Events Multi-Select & Batch Export State
+  const [selectedCompletedFormIds, setSelectedCompletedFormIds] = useState([]);
+  const [showCompletedBatchModal, setShowCompletedBatchModal] = useState(false);
+
   const [activeTab, setActiveTab] = useState('active');
   const [filterDate, setFilterDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -101,6 +108,198 @@ const FormDetails = () => {
   const [activePage, setActivePage] = useState(1);
   const [completedPage, setCompletedPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  const toggleSelectAllCompleted = () => {
+    const completedFormsInView = filteredForms.filter(f => f.is_completed);
+    if (completedFormsInView.length === 0) return;
+
+    const allSelected = completedFormsInView.every(f => selectedCompletedFormIds.includes(f.id));
+    if (allSelected) {
+      setSelectedCompletedFormIds(prev => prev.filter(id => !completedFormsInView.some(f => f.id === id)));
+    } else {
+      const idsToAdd = completedFormsInView.map(f => f.id);
+      setSelectedCompletedFormIds(prev => Array.from(new Set([...prev, ...idsToAdd])));
+    }
+  };
+
+  const toggleSelectCompletedForm = (id) => {
+    setSelectedCompletedFormIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const exportCompletedToExcel = (selectedFormsToExport) => {
+    if (!selectedFormsToExport || selectedFormsToExport.length === 0) {
+      alert('Please select at least one completed event to export.');
+      return;
+    }
+
+    const exportDate = formatDateDDMMYYYY(new Date().toISOString().split('T')[0]);
+    const totalEvents = selectedFormsToExport.length;
+
+    // Sheet 1: Events Summary AOA
+    const sheet1AOA = [
+      ['MEPCO SCHLENK ENGINEERING COLLEGE (AUTONOMOUS)'],
+      ['Mepco School of Management Studies | Completed Events Report'],
+      [`Exported On: ${exportDate} | Total Selected Events: ${totalEvents}`],
+      [], // blank line
+      ['S.No', 'Event Date', 'Event Time', 'Event Name', 'Association', 'Organizers', 'Participants Count', 'Participants Details']
+    ];
+
+    selectedFormsToExport.forEach((form, index) => {
+      const orgList = [
+        form.org1_name ? `${form.org1_name}${form.org1_roll ? ` (${form.org1_roll})` : ''}` : null,
+        form.org2_name ? `${form.org2_name}${form.org2_roll ? ` (${form.org2_roll})` : ''}` : null,
+        form.org3_name ? `${form.org3_name}${form.org3_roll ? ` (${form.org3_roll})` : ''}` : null
+      ].filter(Boolean).join('; ');
+
+      const participantsList = (form.participants || []).map(p => 
+        `${p.username || p.name || 'N/A'}${p.roll_number || p.roll_no ? ` (${p.roll_number || p.roll_no})` : ''}`
+      ).join('; ');
+
+      sheet1AOA.push([
+        index + 1,
+        formatDateDDMMYYYY(form.event_date),
+        form.event_time || 'N/A',
+        form.event_name || 'N/A',
+        getAssociationLabel(form.created_by_sub_role),
+        orgList || 'N/A',
+        (form.participants || []).length,
+        participantsList || 'None'
+      ]);
+    });
+
+    // Sheet 2: Participants Detailed Breakdown AOA
+    const sheet2AOA = [
+      ['MEPCO SCHLENK ENGINEERING COLLEGE (AUTONOMOUS)'],
+      ['Mepco School of Management Studies | Participants Breakdown Report'],
+      [`Exported On: ${exportDate} | Total Selected Events: ${totalEvents}`],
+      [], // blank line
+      ['S.No', 'Event Name', 'Event Date', 'Event Time', 'Association', 'Participant Name', 'Roll Number', 'Year', 'Section']
+    ];
+
+    let pIndex = 1;
+    let hasParticipants = false;
+    selectedFormsToExport.forEach(form => {
+      if (form.participants && form.participants.length > 0) {
+        hasParticipants = true;
+        form.participants.forEach(p => {
+          sheet2AOA.push([
+            pIndex++,
+            form.event_name || 'N/A',
+            formatDateDDMMYYYY(form.event_date),
+            form.event_time || 'N/A',
+            getAssociationLabel(form.created_by_sub_role),
+            p.username || p.name || 'N/A',
+            p.roll_number || p.roll_no || 'N/A',
+            p.year || '1st Year',
+            p.section || 'A'
+          ]);
+        });
+      }
+    });
+
+    const wb = XLSX.utils.book_new();
+
+    const wsSummary = XLSX.utils.aoa_to_sheet(sheet1AOA);
+    wsSummary['!cols'] = [
+      { wch: 6 },  // S.No
+      { wch: 14 }, // Event Date
+      { wch: 22 }, // Event Time
+      { wch: 30 }, // Event Name
+      { wch: 15 }, // Association
+      { wch: 40 }, // Organizers
+      { wch: 18 }, // Count
+      { wch: 60 }  // Participants Details
+    ];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Completed Events');
+
+    if (hasParticipants) {
+      const wsParticipants = XLSX.utils.aoa_to_sheet(sheet2AOA);
+      wsParticipants['!cols'] = [
+        { wch: 6 },  // S.No
+        { wch: 30 }, // Event Name
+        { wch: 14 }, // Event Date
+        { wch: 20 }, // Event Time
+        { wch: 15 }, // Association
+        { wch: 25 }, // Participant Name
+        { wch: 18 }, // Roll Number
+        { wch: 12 }, // Year
+        { wch: 10 }  // Section
+      ];
+      XLSX.utils.book_append_sheet(wb, wsParticipants, 'Participants Breakdown');
+    }
+
+    const fileName = `Completed_Events_Export_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  const exportCompletedToPDF = (selectedFormsToExport) => {
+    if (!selectedFormsToExport || selectedFormsToExport.length === 0) {
+      alert('Please select at least one completed event to export.');
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+
+    doc.setFontSize(15);
+    doc.setFont('helvetica', 'bold');
+    doc.text('MEPCO SCHLENK ENGINEERING COLLEGE (AUTONOMOUS)', 40, 40);
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Mepco School of Management Studies | Completed Events Report', 40, 58);
+    doc.text(`Exported On: ${formatDateDDMMYYYY(new Date().toISOString().split('T')[0])} | Total Selected Events: ${selectedFormsToExport.length}`, 40, 74);
+
+    const tableHeaders = [['S.No', 'Date & Time', 'Event Name', 'Association', 'Organizers', 'Participants']];
+
+    const tableData = selectedFormsToExport.map((form, index) => {
+      const dateTimeStr = `${formatDateDDMMYYYY(form.event_date)}\n${form.event_time || ''}`;
+      
+      const orgs = [
+        form.org1_name ? `${form.org1_name}${form.org1_roll ? ` (${form.org1_roll})` : ''}` : null,
+        form.org2_name ? `${form.org2_name}${form.org2_roll ? ` (${form.org2_roll})` : ''}` : null,
+        form.org3_name ? `${form.org3_name}${form.org3_roll ? ` (${form.org3_roll})` : ''}` : null
+      ].filter(Boolean).join('\n');
+
+      const parts = (form.participants || []).map((p, i) => 
+        `${i + 1}. ${p.username || p.name || 'N/A'} (${p.roll_number || p.roll_no || 'N/A'})`
+      ).join('\n');
+
+      const participantsCell = (form.participants && form.participants.length > 0)
+        ? `Total: ${form.participants.length}\n${parts}`
+        : 'No participants recorded';
+
+      return [
+        index + 1,
+        dateTimeStr,
+        form.event_name || 'N/A',
+        getAssociationLabel(form.created_by_sub_role),
+        orgs || 'N/A',
+        participantsCell
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 90,
+      head: tableHeaders,
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255], fontStyle: 'bold' },
+      styles: { fontSize: 8.5, cellPadding: 5, overflow: 'linebreak' },
+      columnStyles: {
+        0: { cellWidth: 35, halign: 'center' },
+        1: { cellWidth: 95 },
+        2: { cellWidth: 140 },
+        3: { cellWidth: 80 },
+        4: { cellWidth: 160 },
+        5: { cellWidth: 230 }
+      }
+    });
+
+    const fileName = `Completed_Events_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
+  };
 
   // Reset page numbers on tab or filter change
   useEffect(() => {
@@ -993,63 +1192,194 @@ const FormDetails = () => {
 
       {activeTab === 'completed' ? (
         <div className="glass-panel hide-on-print" style={{ padding: '1.5rem', marginTop: '1rem' }}>
+          
+          {/* Multi-Select & Batch Export Toolbar for Completed Events */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '1.25rem',
+            padding: '0.75rem 1.25rem',
+            background: 'rgba(99, 102, 241, 0.1)',
+            borderRadius: '10px',
+            border: '1px solid rgba(99, 102, 241, 0.25)',
+            flexWrap: 'wrap',
+            gap: '0.75rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <FileText size={18} style={{ color: 'var(--primary-hover)' }} />
+              <span style={{ fontWeight: '600', fontSize: '0.9rem', color: 'var(--text)' }}>
+                Selected Completed Events: <span style={{ color: 'var(--primary-hover)', fontWeight: 'bold', fontSize: '1.05rem' }}>{selectedCompletedFormIds.length}</span>
+              </span>
+              {selectedCompletedFormIds.length > 0 && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', borderColor: 'var(--surface-border)' }}
+                  onClick={() => setSelectedCompletedFormIds([])}
+                >
+                  Clear Selection
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-primary"
+                disabled={selectedCompletedFormIds.length === 0}
+                onClick={() => {
+                  const selectedForms = forms.filter(f => selectedCompletedFormIds.includes(f.id));
+                  exportCompletedToExcel(selectedForms);
+                }}
+                style={{
+                  opacity: selectedCompletedFormIds.length === 0 ? 0.5 : 1,
+                  cursor: selectedCompletedFormIds.length === 0 ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 1rem',
+                  fontSize: '0.85rem',
+                  background: '#10B981',
+                  borderColor: '#059669',
+                  color: '#ffffff'
+                }}
+                title={selectedCompletedFormIds.length === 0 ? "Select completed events to export to Excel" : "Export selected events to Excel (.xlsx)"}
+              >
+                <FileSpreadsheet size={16} /> Export to Excel ({selectedCompletedFormIds.length})
+              </button>
+
+              <button
+                className="btn btn-primary"
+                disabled={selectedCompletedFormIds.length === 0}
+                onClick={() => {
+                  const selectedForms = forms.filter(f => selectedCompletedFormIds.includes(f.id));
+                  exportCompletedToPDF(selectedForms);
+                }}
+                style={{
+                  opacity: selectedCompletedFormIds.length === 0 ? 0.5 : 1,
+                  cursor: selectedCompletedFormIds.length === 0 ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 1rem',
+                  fontSize: '0.85rem',
+                  background: '#EF4444',
+                  borderColor: '#DC2626',
+                  color: '#ffffff'
+                }}
+                title={selectedCompletedFormIds.length === 0 ? "Select completed events to export to PDF" : "Download selected events as PDF"}
+              >
+                <FileText size={16} /> Download PDF ({selectedCompletedFormIds.length})
+              </button>
+
+              <button
+                className="btn btn-secondary"
+                disabled={selectedCompletedFormIds.length === 0}
+                onClick={() => {
+                  setShowCompletedBatchModal(true);
+                }}
+                style={{
+                  opacity: selectedCompletedFormIds.length === 0 ? 0.5 : 1,
+                  cursor: selectedCompletedFormIds.length === 0 ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 1rem',
+                  fontSize: '0.85rem'
+                }}
+                title="Print or Save PDF report for selected completed events"
+              >
+                <Printer size={16} /> Print / PDF Preview ({selectedCompletedFormIds.length})
+              </button>
+            </div>
+          </div>
+
           <div className="table-container">
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--surface-border)' }}>
-                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'left' }}>Event Date</th>
+                  <th style={{ padding: '1rem', width: '40px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                      checked={
+                        filteredForms.filter(f => f.is_completed).length > 0 &&
+                        filteredForms.filter(f => f.is_completed).every(f => selectedCompletedFormIds.includes(f.id))
+                      }
+                      onChange={toggleSelectAllCompleted}
+                      title="Select / Deselect all completed events"
+                    />
+                  </th>
+                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'left' }}>Event Date & Time</th>
                   <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'left' }}>Event Name</th>
                   <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'left' }}>Association</th>
                   <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'left' }}>Organizers</th>
+                  <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'left' }}>Participants</th>
                   <th style={{ padding: '1rem', color: 'var(--heading-color)', fontWeight: '600', textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {paginatedCompletedForms.map(form => (
-                  <tr key={form.id} style={{ borderBottom: '1px solid var(--surface-border)' }}>
-                    <td style={{ padding: '1rem' }}>
-                      <div style={{ fontWeight: 500 }}>
-                        {formatDateDDMMYYYY(form.event_date)}
-                      </div>
-                      {form.event_time && (
-                        <div style={{ fontSize: '0.8rem', color: 'var(--primary-hover)', marginTop: '0.25rem', fontWeight: 500 }}>
-                          ⏰ {form.event_time}
+                {paginatedCompletedForms.map(form => {
+                  const isSelected = selectedCompletedFormIds.includes(form.id);
+                  return (
+                    <tr key={form.id} style={{ borderBottom: '1px solid var(--surface-border)', background: isSelected ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }}>
+                      <td style={{ padding: '1rem', textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                          checked={isSelected}
+                          onChange={() => toggleSelectCompletedForm(form.id)}
+                        />
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{ fontWeight: 500 }}>
+                          {formatDateDDMMYYYY(form.event_date)}
                         </div>
-                      )}
-                    </td>
-                    <td style={{ padding: '1rem', fontWeight: 500 }}>{form.event_name}</td>
-                    <td style={{ padding: '1rem' }}>
-                      <span className="association-badge" style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '500', background: 'rgba(99, 102, 241, 0.15)', color: '#818CF8' }}>
-                        {getAssociationLabel(form.created_by_sub_role)}
-                      </span>
-                    </td>
-                    <td style={{ padding: '1rem' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.85rem' }}>
-                        <div><strong>{form.org1_name}</strong></div>
-                        {form.org2_name && <div><strong>{form.org2_name}</strong></div>}
-                        {form.org3_name && <div><strong>{form.org3_name}</strong></div>}
-                      </div>
-                    </td>
-                    <td style={{ padding: '1rem', textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
-                        <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handlePrint(form.id)}>
-                          Print
-                        </button>
-                        <button className="btn btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', background: 'var(--secondary)' }} onClick={() => setViewingForm(form)}>
-                          View
-                        </button>
-                        {canDeleteForm(form) && (
-                          <button className="btn btn-danger" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handleDeleteForm(form.id)}>
-                            Delete
-                          </button>
+                        {form.event_time && (
+                          <div style={{ fontSize: '0.8rem', color: 'var(--primary-hover)', marginTop: '0.25rem', fontWeight: 500 }}>
+                            ⏰ {form.event_time}
+                          </div>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td style={{ padding: '1rem', fontWeight: 500 }}>{form.event_name}</td>
+                      <td style={{ padding: '1rem' }}>
+                        <span className="association-badge" style={{ padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '500', background: 'rgba(99, 102, 241, 0.15)', color: '#818CF8' }}>
+                          {getAssociationLabel(form.created_by_sub_role)}
+                        </span>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.85rem' }}>
+                          <div><strong>{form.org1_name}</strong></div>
+                          {form.org2_name && <div><strong>{form.org2_name}</strong></div>}
+                          {form.org3_name && <div><strong>{form.org3_name}</strong></div>}
+                        </div>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
+                          <Users size={15} style={{ color: 'var(--text-muted)' }} />
+                          <span>{form.participants ? form.participants.length : 0} Participant(s)</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '1rem', textAlign: 'center' }}>
+                        <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handlePrint(form.id)}>
+                            Print
+                          </button>
+                          <button className="btn btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', background: 'var(--secondary)' }} onClick={() => setViewingForm(form)}>
+                            View
+                          </button>
+                          {canDeleteForm(form) && (
+                            <button className="btn btn-danger" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => handleDeleteForm(form.id)}>
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {filteredForms.length === 0 && (
                   <tr>
-                    <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                    <td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                       No completed events found.
                     </td>
                   </tr>
@@ -2594,6 +2924,208 @@ const FormDetails = () => {
 
 
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal for Batch Completed Events Print / PDF Preview */}
+      {showCompletedBatchModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'var(--modal-overlay, rgba(15, 23, 42, 0.75))',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: '1rem'
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%',
+            maxWidth: '1000px',
+            maxHeight: '92vh',
+            overflowY: 'auto',
+            background: 'var(--modal-bg, #ffffff)',
+            color: 'var(--text)',
+            borderRadius: '16px',
+            border: '1px solid var(--surface-border)'
+          }}>
+            {/* Header / Action buttons (hidden on print) */}
+            <div className="hide-on-print" style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '1.5rem',
+              borderBottom: '1px solid var(--surface-border)',
+              paddingBottom: '1rem'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, color: 'var(--heading-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Printer size={20} style={{ color: 'var(--primary)' }} />
+                  Completed Events Batch Report ({selectedCompletedFormIds.length} Events)
+                </h3>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    const selectedForms = forms.filter(f => selectedCompletedFormIds.includes(f.id));
+                    exportCompletedToExcel(selectedForms);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#10B981', borderColor: '#059669' }}
+                >
+                  <FileSpreadsheet size={18} /> Export Excel
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => window.print()}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  <Printer size={18} /> Print / Save as PDF
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowCompletedBatchModal(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Content */}
+            <div className="batch-print-wrapper" style={{
+              background: 'white',
+              color: 'black',
+              padding: '2.5rem',
+              borderRadius: '12px'
+            }}>
+              {/* College Header */}
+              <div style={{ textAlign: 'center', borderBottom: '2.5px solid black', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <h1 style={{ fontSize: '18pt', fontWeight: 'bold', color: 'black', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Mepco Schlenk Engineering College (Autonomous)
+                </h1>
+                <h2 style={{ fontSize: '11pt', fontWeight: '600', color: '#1e293b', margin: '0.35rem 0' }}>
+                  Sivakasi, Tamilnadu, India - 626005 | Mepco School of Management Studies
+                </h2>
+                <h3 style={{ fontSize: '13pt', fontWeight: 'bold', color: '#1e40af', margin: '0.5rem 0 0 0', textDecoration: 'underline' }}>
+                  COMPLETED EVENTS BATCH REPORT
+                </h3>
+              </div>
+
+              {/* Selected Events Summary Table */}
+              {(() => {
+                const selectedForms = forms.filter(f => selectedCompletedFormIds.includes(f.id));
+                return (
+                  <div>
+                    <h4 style={{ fontSize: '11pt', fontWeight: 'bold', color: 'black', marginBottom: '0.75rem', textTransform: 'uppercase' }}>
+                      Selected Events Overview ({selectedForms.length})
+                    </h4>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '2rem', border: '1px solid black', fontSize: '9.5pt', color: 'black' }}>
+                      <thead>
+                        <tr style={{ background: '#f1f5f9', borderBottom: '1.5px solid black' }}>
+                          <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center', width: '35px' }}>S.No</th>
+                          <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left', width: '110px' }}>Date & Time</th>
+                          <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left' }}>Event Name</th>
+                          <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left', width: '90px' }}>Association</th>
+                          <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'left' }}>Organizers</th>
+                          <th style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center', width: '80px' }}>Participants</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedForms.map((form, idx) => (
+                          <tr key={form.id} style={{ borderBottom: '1px solid black' }}>
+                            <td style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center' }}>{idx + 1}</td>
+                            <td style={{ padding: '0.5rem', border: '1px solid black' }}>
+                              <div>{formatDateDDMMYYYY(form.event_date)}</div>
+                              {form.event_time && <div style={{ fontSize: '8.5pt', color: '#475569' }}>{form.event_time}</div>}
+                            </td>
+                            <td style={{ padding: '0.5rem', border: '1px solid black', fontWeight: 'bold' }}>{form.event_name}</td>
+                            <td style={{ padding: '0.5rem', border: '1px solid black' }}>{getAssociationLabel(form.created_by_sub_role)}</td>
+                            <td style={{ padding: '0.5rem', border: '1px solid black' }}>
+                              <div>{form.org1_name}</div>
+                              {form.org2_name && <div>{form.org2_name}</div>}
+                              {form.org3_name && <div>{form.org3_name}</div>}
+                            </td>
+                            <td style={{ padding: '0.5rem', border: '1px solid black', textAlign: 'center' }}>
+                              {form.participants ? form.participants.length : 0}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {/* Detailed Breakdown for Each Event */}
+                    {selectedForms.map((form, idx) => (
+                      <div key={form.id} style={{ pageBreakInside: 'avoid', marginBottom: '2.5rem', borderTop: idx > 0 ? '1px dashed #cbd5e1' : 'none', paddingTop: idx > 0 ? '1.5rem' : 0 }}>
+                        <h3 style={{ fontSize: '12pt', fontWeight: 'bold', color: '#1e40af', marginBottom: '0.5rem' }}>
+                          Event #{idx + 1}: {form.event_name} ({formatDateDDMMYYYY(form.event_date)})
+                        </h3>
+
+                        {/* Basic Event Info */}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1rem', border: '1px solid black', fontSize: '9pt', color: 'black' }}>
+                          <tbody>
+                            <tr style={{ borderBottom: '1px solid black' }}>
+                              <td style={{ padding: '0.4rem', width: '20%', fontWeight: 'bold', background: '#f8fafc', borderRight: '1px solid black' }}>Event Date & Time</td>
+                              <td style={{ padding: '0.4rem', width: '80%' }}>{formatDateDDMMYYYY(form.event_date)} {form.event_time ? `(${form.event_time})` : ''}</td>
+                            </tr>
+                            <tr style={{ borderBottom: '1px solid black' }}>
+                              <td style={{ padding: '0.4rem', fontWeight: 'bold', background: '#f8fafc', borderRight: '1px solid black' }}>Association</td>
+                              <td style={{ padding: '0.4rem' }}>{getAssociationLabel(form.created_by_sub_role)}</td>
+                            </tr>
+                            <tr>
+                              <td style={{ padding: '0.4rem', fontWeight: 'bold', background: '#f8fafc', borderRight: '1px solid black' }}>Organizers</td>
+                              <td style={{ padding: '0.4rem' }}>
+                                {[
+                                  form.org1_name ? `${form.org1_name}${form.org1_roll ? ` (${form.org1_roll})` : ''}` : null,
+                                  form.org2_name ? `${form.org2_name}${form.org2_roll ? ` (${form.org2_roll})` : ''}` : null,
+                                  form.org3_name ? `${form.org3_name}${form.org3_roll ? ` (${form.org3_roll})` : ''}` : null
+                                ].filter(Boolean).join(', ')}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+
+                        {/* Participants Roster if any */}
+                        {form.participants && form.participants.length > 0 && (
+                          <div style={{ marginBottom: '1rem' }}>
+                            <h5 style={{ fontSize: '9.5pt', fontWeight: 'bold', color: 'black', marginBottom: '0.35rem', textTransform: 'uppercase' }}>
+                              Participants List ({form.participants.length})
+                            </h5>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8.5pt', color: 'black', border: '1px solid black' }}>
+                              <thead>
+                                <tr style={{ background: '#f1f5f9', borderBottom: '1px solid black' }}>
+                                  <th style={{ padding: '0.35rem', border: '1px solid black', textAlign: 'center', width: '30px' }}>#</th>
+                                  <th style={{ padding: '0.35rem', border: '1px solid black', textAlign: 'left' }}>Participant Name</th>
+                                  <th style={{ padding: '0.35rem', border: '1px solid black', textAlign: 'left', width: '120px' }}>Roll Number</th>
+                                  <th style={{ padding: '0.35rem', border: '1px solid black', textAlign: 'center', width: '80px' }}>Year</th>
+                                  <th style={{ padding: '0.35rem', border: '1px solid black', textAlign: 'center', width: '70px' }}>Section</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {form.participants.map((p, pIdx) => (
+                                  <tr key={p.id || pIdx} style={{ borderBottom: '1px solid black' }}>
+                                    <td style={{ padding: '0.35rem', border: '1px solid black', textAlign: 'center' }}>{pIdx + 1}</td>
+                                    <td style={{ padding: '0.35rem', border: '1px solid black' }}>{p.username || p.name || 'N/A'}</td>
+                                    <td style={{ padding: '0.35rem', border: '1px solid black' }}>{p.roll_number || p.roll_no || 'N/A'}</td>
+                                    <td style={{ padding: '0.35rem', border: '1px solid black', textAlign: 'center' }}>{p.year || '1st Year'}</td>
+                                    <td style={{ padding: '0.35rem', border: '1px solid black', textAlign: 'center' }}>{p.section || 'A'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

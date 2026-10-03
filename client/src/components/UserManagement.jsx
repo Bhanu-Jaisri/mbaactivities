@@ -141,6 +141,18 @@ const UserManagement = () => {
     fetchUsers();
   }, []);
 
+  const canEditUser = (u) => {
+    if (user.role === 'Admin') return true;
+    if (user.role === 'Staff' && u.role === 'Student') return true;
+    return false;
+  };
+
+  const canResetPassword = (u) => {
+    if (user.role === 'Admin') return true;
+    if (user.role === 'Staff' && u.role === 'Student') return true;
+    return false;
+  };
+
   const isDeletable = (u) => {
     if (u.id === user.id) return false;
     if (u.role === 'Admin') return false;
@@ -922,18 +934,20 @@ Sl. Roll No Name of the Student
                       </div>
                     ) : (
                       <div style={{ display: 'flex', gap: '0.25rem' }}>
+                        {canEditUser(u) && (
+                          <button onClick={() => handleEditClick(u)} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem' }} title="Edit User">
+                            <Edit3 size={16} />
+                          </button>
+                        )}
+                        {canResetPassword(u) && (
+                          <button onClick={() => handleOpenResetPassword(u)} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem', color: '#60A5FA', borderColor: 'rgba(96, 165, 250, 0.3)' }} title="Reset Password">
+                            <Key size={16} />
+                          </button>
+                        )}
                         {isDeletable(u) && (
-                          <>
-                            <button onClick={() => handleEditClick(u)} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem' }} title="Edit Student">
-                              <Edit3 size={16} />
-                            </button>
-                            <button onClick={() => handleOpenResetPassword(u)} className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem', color: '#60A5FA', borderColor: 'rgba(96, 165, 250, 0.3)' }} title="Reset User Password">
-                              <Key size={16} />
-                            </button>
-                            <button onClick={() => handleDelete(u.id)} className="btn btn-danger" style={{ padding: '0.4rem 0.6rem' }} title="Delete User">
-                              <Trash2 size={16} />
-                            </button>
-                          </>
+                          <button onClick={() => handleDelete(u.id)} className="btn btn-danger" style={{ padding: '0.4rem 0.6rem' }} title="Delete User">
+                            <Trash2 size={16} />
+                          </button>
                         )}
                       </div>
                     )}
